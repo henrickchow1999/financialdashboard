@@ -1,0 +1,1385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ledgerly — Income & Expense Tracker</title>
+<meta name="description" content="A clean, private income and expense tracker for tax time. Upload receipts, auto-categorize, and export a CSV for your accountant. All data stays in your browser.">
+<meta property="og:title" content="Ledgerly — Income & Expense Tracker">
+<meta property="og:description" content="Upload receipts, auto-categorize expenses, and export a CSV for your accountant. Everything stays private in your own browser.">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%232a78d6'/><text y='72' x='50' text-anchor='middle' font-size='62' font-family='system-ui,sans-serif' font-weight='700' fill='white'>L</text></svg>">
+<style>
+  :root {
+    color-scheme: light;
+    --page:           #f9f9f7;
+    --surface-1:      #fcfcfb;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #898781;
+    --grid:           #e1e0d9;
+    --baseline:       #c3c2b7;
+    --border:         rgba(11,11,11,0.10);
+    --income:         #2a78d6;  /* series-1 blue  */
+    --expense:        #eb6834;  /* series-2 orange */
+    --good-text:      #006300;
+    --critical:       #d03b3b;
+    --accent:         #2a78d6;
+    --accent-ink:     #ffffff;
+    --wash:           rgba(11,11,11,0.045);
+    --shadow:         0 1px 2px rgba(11,11,11,.05), 0 4px 16px rgba(11,11,11,.05);
+    --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100;
+    --s5:#e87ba4; --s6:#008300; --s7:#4a3aa7; --s8:#e34948;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --page:           #0d0d0d;
+      --surface-1:      #1a1a19;
+      --text-primary:   #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted:     #898781;
+      --grid:           #2c2c2a;
+      --baseline:       #383835;
+      --border:         rgba(255,255,255,0.10);
+      --income:         #3987e5;
+      --expense:        #d95926;
+      --good-text:      #0ca30c;
+      --critical:       #e66767;
+      --accent:         #3987e5;
+      --wash:           rgba(255,255,255,0.06);
+      --shadow:         0 1px 2px rgba(0,0,0,.4), 0 4px 16px rgba(0,0,0,.35);
+      --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500;
+      --s5:#d55181; --s6:#008300; --s7:#9085e9; --s8:#e66767;
+    }
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--page);
+    color: var(--text-primary);
+    font-size: 14px;
+    line-height: 1.45;
+  }
+  button { font: inherit; color: inherit; background: none; border: none; cursor: pointer; }
+  input, select, textarea { font: inherit; color: var(--text-primary); }
+
+  .app { max-width: 1120px; margin: 0 auto; padding: 24px 24px 64px; }
+
+  /* ---------- Header ---------- */
+  header.topbar {
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    padding-bottom: 20px;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; margin-right: auto; }
+  .brand .logo {
+    width: 34px; height: 34px; border-radius: 9px;
+    background: var(--accent); color: var(--accent-ink);
+    display: grid; place-items: center; font-weight: 700; font-size: 16px;
+  }
+  .brand h1 { font-size: 18px; font-weight: 700; letter-spacing: -0.01em; }
+  .brand .sub { font-size: 12px; color: var(--text-muted); }
+
+  .select-wrap select, .toolbar-btn {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 7px 12px;
+    font-size: 13px;
+    box-shadow: var(--shadow);
+  }
+  .toolbar-btn { display: inline-flex; align-items: center; gap: 7px; font-weight: 500; }
+  .toolbar-btn:hover { background: var(--wash); }
+  .toolbar-btn.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+  .toolbar-btn.primary:hover { filter: brightness(1.07); }
+  .toolbar-btn svg { width: 15px; height: 15px; }
+
+  /* ---------- Stat tiles ---------- */
+  .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  @media (max-width: 860px) { .tiles { grid-template-columns: repeat(2, 1fr); } }
+  .tile {
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 12px; padding: 16px 18px; box-shadow: var(--shadow);
+  }
+  .tile .label { font-size: 12px; font-weight: 600; color: var(--text-secondary); display:flex; align-items:center; gap:7px; }
+  .tile .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .tile .value { font-size: 26px; font-weight: 700; letter-spacing: -0.01em; margin-top: 6px; }
+  .tile .hint { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+  .tile .value.positive { color: var(--good-text); }
+  .tile .value.negative { color: var(--critical); }
+
+  /* ---------- Cards / layout ---------- */
+  .row { display: grid; gap: 14px; margin-top: 14px; }
+  .row.charts { grid-template-columns: 3fr 2fr; }
+  @media (max-width: 860px) { .row.charts { grid-template-columns: 1fr; } }
+  .card {
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 12px; padding: 18px; box-shadow: var(--shadow);
+    min-width: 0;
+  }
+  .card h2 { font-size: 14px; font-weight: 600; }
+  .card .card-sub { font-size: 12px; color: var(--text-muted); margin-top: 1px; }
+  .card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 14px; }
+
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: var(--text-secondary); }
+  .legend .key { display: inline-flex; align-items: center; gap: 6px; }
+  .legend .swatch { width: 10px; height: 10px; border-radius: 3px; }
+
+  /* ---------- Charts ---------- */
+  .chart-wrap { position: relative; }
+  .chart-wrap svg { display: block; width: 100%; height: auto; }
+  .tooltip {
+    position: absolute; pointer-events: none; z-index: 20;
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 10px; box-shadow: var(--shadow);
+    font-size: 12px; min-width: 130px; opacity: 0; transition: opacity .1s;
+  }
+  .tooltip .tt-title { font-weight: 600; margin-bottom: 4px; }
+  .tooltip .tt-row { display: flex; align-items: center; gap: 6px; justify-content: space-between; color: var(--text-secondary); }
+  .tooltip .tt-row b { color: var(--text-primary); font-variant-numeric: tabular-nums; }
+  .tooltip .sw { width: 8px; height: 8px; border-radius: 2px; display: inline-block; margin-right: 5px; }
+
+  .donut-layout { display: flex; align-items: center; gap: 20px; }
+  .donut-layout .chart-wrap { flex: 0 0 180px; }
+  .donut-legend { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 7px; font-size: 12.5px; }
+  .donut-legend .dl-row { display: flex; align-items: center; gap: 8px; }
+  .donut-legend .dl-row .swatch { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+  .donut-legend .dl-row .name { color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .donut-legend .dl-row .amt { margin-left: auto; font-variant-numeric: tabular-nums; font-weight: 600; }
+  .donut-legend .dl-row .pct { color: var(--text-muted); font-variant-numeric: tabular-nums; width: 36px; text-align: right; }
+  .donut-center-label { font-size: 11px; fill: var(--text-muted); }
+  .donut-center-value { font-size: 17px; font-weight: 700; fill: var(--text-primary); }
+
+  .empty-note { color: var(--text-muted); font-size: 13px; text-align: center; padding: 36px 10px; }
+
+  /* ---------- Dropzone ---------- */
+  .dropzone {
+    margin-top: 14px;
+    border: 1.5px dashed var(--baseline);
+    border-radius: 12px;
+    padding: 26px 20px;
+    text-align: center;
+    background: var(--surface-1);
+    transition: border-color .15s, background .15s;
+    cursor: pointer;
+  }
+  .dropzone:hover, .dropzone.dragover { border-color: var(--accent); background: var(--wash); }
+  .dropzone .dz-icon { font-size: 26px; }
+  .dropzone .dz-title { font-weight: 600; margin-top: 6px; }
+  .dropzone .dz-sub { font-size: 12.5px; color: var(--text-muted); margin-top: 3px; }
+  .dropzone .dz-sub b { color: var(--text-secondary); }
+
+  /* ---------- Transactions table ---------- */
+  .tx-toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+  .tx-toolbar input[type="search"] {
+    flex: 1; min-width: 160px;
+    background: transparent; border: 1px solid var(--border); border-radius: 8px;
+    padding: 7px 11px; font-size: 13px;
+  }
+  .tx-toolbar select {
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
+    padding: 7px 10px; font-size: 13px;
+  }
+  .seg { display: inline-flex; background: var(--wash); border-radius: 8px; padding: 3px; }
+  .seg button { padding: 5px 12px; border-radius: 6px; font-size: 12.5px; font-weight: 500; color: var(--text-secondary); }
+  .seg button.active { background: var(--surface-1); color: var(--text-primary); box-shadow: var(--shadow); }
+
+  table.tx { width: 100%; border-collapse: collapse; }
+  table.tx th {
+    text-align: left; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em;
+    color: var(--text-muted); padding: 8px 10px; border-bottom: 1px solid var(--grid);
+  }
+  table.tx td { padding: 10px; border-bottom: 1px solid var(--grid); font-size: 13.5px; vertical-align: middle; }
+  table.tx tr:last-child td { border-bottom: none; }
+  table.tx tr.txr:hover td { background: var(--wash); }
+  td.amt, th.amt { text-align: right; font-variant-numeric: tabular-nums; }
+  td.amt.in { color: var(--good-text); font-weight: 600; }
+  td.amt.out { font-weight: 600; }
+  .vendor-cell .v { font-weight: 600; }
+  .vendor-cell .d { font-size: 12px; color: var(--text-muted); max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; font-weight: 500; color: var(--text-secondary);
+    background: var(--wash); border-radius: 999px; padding: 3px 10px; white-space: nowrap;
+  }
+  .chip .cdot { width: 7px; height: 7px; border-radius: 50%; }
+  .rcpt-btn, .icon-btn {
+    width: 28px; height: 28px; border-radius: 7px; display: inline-grid; place-items: center;
+    color: var(--text-muted);
+  }
+  .rcpt-btn:hover, .icon-btn:hover { background: var(--wash); color: var(--text-primary); }
+  .row-actions { display: flex; gap: 2px; justify-content: flex-end; }
+  .muted-s { color: var(--text-muted); font-size: 12.5px; }
+
+  /* ---------- Modal ---------- */
+  .overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 50;
+    display: none; align-items: flex-start; justify-content: center; padding: 5vh 16px;
+    overflow-y: auto;
+  }
+  .overlay.open { display: flex; }
+  .modal {
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 14px;
+    box-shadow: 0 12px 48px rgba(0,0,0,.25); width: 100%; max-width: 720px;
+  }
+  .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--grid); }
+  .modal-head h3 { font-size: 15px; }
+  .modal-body { padding: 20px; display: grid; grid-template-columns: 240px 1fr; gap: 20px; }
+  .modal-body.no-receipt { grid-template-columns: 1fr; }
+  @media (max-width: 680px) { .modal-body { grid-template-columns: 1fr; } }
+  .receipt-pane { display: flex; flex-direction: column; gap: 8px; }
+  .receipt-pane .frame {
+    border: 1px solid var(--grid); border-radius: 10px; overflow: hidden;
+    background: var(--wash); min-height: 160px; display: grid; place-items: center;
+  }
+  .receipt-pane img { max-width: 100%; display: block; }
+  .receipt-pane .fname { font-size: 12px; color: var(--text-muted); word-break: break-all; }
+  .pdf-badge { text-align: center; color: var(--text-muted); font-size: 13px; padding: 30px 10px; }
+  .pdf-badge .big { font-size: 30px; }
+
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .field { display: flex; flex-direction: column; gap: 5px; }
+  .field.full { grid-column: 1 / -1; }
+  .field label { font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+  .field input, .field select, .field textarea {
+    background: transparent; border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 10px; font-size: 13.5px; width: 100%;
+  }
+  .field input:focus, .field select:focus, .field textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
+  .field select { background: var(--surface-1); }
+  .suggest-hint { font-size: 11.5px; color: var(--accent); font-weight: 500; display: none; }
+  .suggest-hint.show { display: block; }
+  .type-seg { display: flex; background: var(--wash); border-radius: 8px; padding: 3px; }
+  .type-seg button { flex: 1; padding: 7px; border-radius: 6px; font-weight: 600; font-size: 13px; color: var(--text-secondary); }
+  .type-seg button.active.exp { background: var(--surface-1); color: var(--expense); box-shadow: var(--shadow); }
+  .type-seg button.active.inc { background: var(--surface-1); color: var(--income); box-shadow: var(--shadow); }
+  .modal-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 14px 20px; border-top: 1px solid var(--grid); }
+  .modal-foot .right { display: flex; gap: 10px; margin-left: auto; }
+  .btn-danger-ghost { color: var(--critical); font-weight: 500; padding: 7px 10px; border-radius: 8px; }
+  .btn-danger-ghost:hover { background: var(--wash); }
+
+  /* receipt viewer */
+  .viewer img { max-width: 100%; max-height: 78vh; display: block; margin: 0 auto; border-radius: 8px; }
+  .viewer { max-width: 860px; }
+  .viewer .modal-body { display: block; }
+
+  .toast {
+    position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%) translateY(8px);
+    background: var(--text-primary); color: var(--page);
+    padding: 9px 16px; border-radius: 9px; font-size: 13px; font-weight: 500;
+    opacity: 0; transition: opacity .18s, transform .18s; z-index: 100; pointer-events: none;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  .empty-state { text-align: center; padding: 44px 20px; }
+  .empty-state .big { font-size: 34px; }
+  .empty-state h3 { margin-top: 8px; font-size: 15px; }
+  .empty-state p { color: var(--text-muted); font-size: 13px; margin-top: 4px; }
+  .empty-state button { margin-top: 14px; }
+
+  /* ---------- Scan status ---------- */
+  .scan-banner {
+    grid-column: 1 / -1;
+    display: flex; align-items: flex-start; gap: 10px;
+    border-radius: 9px; padding: 10px 12px; font-size: 12.5px;
+    background: var(--wash); color: var(--text-secondary);
+  }
+  .scan-banner .icon { flex: none; font-size: 14px; line-height: 1.3; }
+  .scan-banner b { color: var(--text-primary); }
+  .scan-banner.scanning { color: var(--accent); }
+  .scan-banner.low { background: rgba(250,178,25,.14); }
+  .scan-banner.failed { background: rgba(208,59,59,.12); }
+  .spinner {
+    width: 13px; height: 13px; flex: none; margin-top: 1px;
+    border: 2px solid var(--border); border-top-color: var(--accent);
+    border-radius: 50%; animation: spin .7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .items-box {
+    grid-column: 1 / -1;
+    border: 1px solid var(--border); border-radius: 9px; padding: 10px 12px;
+  }
+  .items-box .ib-head { font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px; }
+  .items-box .ib-row { display: flex; justify-content: space-between; gap: 10px; font-size: 12.5px; padding: 2px 0; color: var(--text-secondary); }
+  .items-box .ib-row span:last-child { font-variant-numeric: tabular-nums; color: var(--text-primary); }
+
+  .scan-overlay {
+    position: absolute; inset: 0; border-radius: 10px;
+    background: color-mix(in srgb, var(--surface-1) 78%, transparent);
+    display: grid; place-items: center; gap: 8px; align-content: center;
+    font-size: 12px; color: var(--text-secondary); font-weight: 500;
+  }
+  .receipt-pane .frame { position: relative; }
+
+  .privacy-note {
+    margin-top: 18px; text-align: center;
+    font-size: 12.5px; color: var(--text-muted);
+    max-width: 620px; margin-left: auto; margin-right: auto;
+    line-height: 1.6;
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">L</div>
+      <div>
+        <h1>Ledgerly</h1>
+        <div class="sub">Income &amp; expense tracker for tax time</div>
+      </div>
+    </div>
+    <div class="select-wrap"><select id="yearFilter" title="Tax year"></select></div>
+    <div class="select-wrap"><select id="currencySel" title="Currency">
+      <option>MYR</option><option>SGD</option><option>USD</option><option>EUR</option>
+      <option>GBP</option><option>AUD</option><option>CAD</option><option>NZD</option>
+      <option>HKD</option><option>IDR</option><option>THB</option><option>PHP</option>
+    </select></div>
+    <button class="toolbar-btn" id="exportBtn" title="Download a CSV your accountant can open in Excel">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Export CSV
+    </button>
+    <button class="toolbar-btn primary" id="addBtn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Add transaction
+    </button>
+  </header>
+
+  <section class="tiles" id="tiles"></section>
+
+  <section class="row charts">
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <h2>Monthly cash flow</h2>
+          <div class="card-sub" id="barSub"></div>
+        </div>
+        <div class="legend">
+          <span class="key"><span class="swatch" style="background:var(--income)"></span>Income</span>
+          <span class="key"><span class="swatch" style="background:var(--expense)"></span>Expenses</span>
+        </div>
+      </div>
+      <div class="chart-wrap" id="barChart"></div>
+    </div>
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <h2>Expenses by category</h2>
+          <div class="card-sub" id="donutSub"></div>
+        </div>
+      </div>
+      <div id="donutArea"></div>
+    </div>
+  </section>
+
+  <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="Upload a receipt or invoice">
+    <div class="dz-icon">🧾</div>
+    <div class="dz-title">Drop a receipt or invoice here</div>
+    <div class="dz-sub">or <b>click to browse</b> — JPG, PNG or PDF. Claude reads the merchant, date, amount, items and category for you; you just review and save.</div>
+    <input type="file" id="fileInput" accept="image/*,application/pdf" hidden multiple>
+  </div>
+
+  <section class="row">
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <h2>Transactions</h2>
+          <div class="card-sub" id="txCount"></div>
+        </div>
+      </div>
+      <div class="tx-toolbar">
+        <div class="seg" id="typeSeg">
+          <button data-t="all" class="active">All</button>
+          <button data-t="income">Income</button>
+          <button data-t="expense">Expenses</button>
+        </div>
+        <select id="catFilter"><option value="">All categories</option></select>
+        <input type="search" id="searchBox" placeholder="Search vendor, description, notes…">
+      </div>
+      <div id="txTableWrap"></div>
+    </div>
+  </section>
+
+  <footer class="privacy-note">
+    🔒 Your transactions and receipts are stored only in this browser on this device — nothing is uploaded to any server.
+    Clearing your browser data will erase them, so export a CSV to keep a backup.
+  </footer>
+
+</div>
+
+<!-- Add / edit modal -->
+<div class="overlay" id="txOverlay">
+  <div class="modal">
+    <div class="modal-head">
+      <h3 id="modalTitle">New transaction</h3>
+      <button class="icon-btn" id="modalClose" aria-label="Close">✕</button>
+    </div>
+    <div class="modal-body" id="modalBody">
+      <div class="receipt-pane" id="receiptPane"></div>
+      <form id="txForm" class="form-grid" autocomplete="off">
+        <div id="scanBanner"></div>
+        <div class="field full">
+          <label>Type</label>
+          <div class="type-seg">
+            <button type="button" id="typeExp" class="exp">Expense</button>
+            <button type="button" id="typeInc" class="inc">Income</button>
+          </div>
+        </div>
+        <div class="field">
+          <label for="fDate">Date</label>
+          <input type="date" id="fDate" required>
+        </div>
+        <div class="field">
+          <label for="fAmount">Amount</label>
+          <input type="number" id="fAmount" min="0" step="0.01" placeholder="0.00" required>
+        </div>
+        <div class="field full">
+          <label for="fVendor" id="vendorLabel">Vendor</label>
+          <input type="text" id="fVendor" placeholder="e.g. Office Depot" required>
+        </div>
+        <div class="field full">
+          <label for="fDesc">Description</label>
+          <input type="text" id="fDesc" placeholder="What was this for?">
+        </div>
+        <div class="field">
+          <label for="fCat">Category</label>
+          <select id="fCat"></select>
+          <span class="suggest-hint" id="catHint">✨ Suggested from the vendor name</span>
+        </div>
+        <div class="field">
+          <label for="fMethod">Payment method</label>
+          <select id="fMethod">
+            <option>Card</option><option>Bank transfer</option><option>Cash</option>
+            <option>PayPal</option><option>Other</option>
+          </select>
+        </div>
+        <div class="field full">
+          <label for="fNotes">Notes for accountant <span class="muted-s">(optional)</span></label>
+          <input type="text" id="fNotes" placeholder="e.g. 50% business use">
+        </div>
+        <div id="itemsBox"></div>
+      </form>
+    </div>
+    <div class="modal-foot">
+      <button class="btn-danger-ghost" id="deleteBtn" style="display:none">Delete</button>
+      <div class="right">
+        <button class="toolbar-btn" id="cancelBtn">Cancel</button>
+        <button class="toolbar-btn primary" id="saveBtn">Save transaction</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Receipt viewer -->
+<div class="overlay" id="viewOverlay">
+  <div class="modal viewer">
+    <div class="modal-head">
+      <h3 id="viewTitle">Receipt</h3>
+      <button class="icon-btn" id="viewClose" aria-label="Close">✕</button>
+    </div>
+    <div class="modal-body" id="viewBody"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+
+/* ================= Data layer ================= */
+
+const LS_KEY = "ledgerly.txns.v1";
+const LS_CUR = "ledgerly.currency";
+let txns = [];
+try { txns = JSON.parse(localStorage.getItem(LS_KEY) || "[]"); } catch { txns = []; }
+
+let currency = localStorage.getItem(LS_CUR) || "MYR";
+
+function persist() { localStorage.setItem(LS_KEY, JSON.stringify(txns)); }
+const uid = () => "t" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+
+/* Receipts live in IndexedDB so images don't blow the localStorage quota */
+let dbp = null;
+function db() {
+  if (dbp) return dbp;
+  dbp = new Promise((res, rej) => {
+    const r = indexedDB.open("ledgerly", 1);
+    r.onupgradeneeded = () => r.result.createObjectStore("receipts");
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+  return dbp;
+}
+async function putReceipt(id, rec) {
+  const d = await db();
+  return new Promise((res, rej) => {
+    const tx = d.transaction("receipts", "readwrite");
+    tx.objectStore("receipts").put(rec, id);
+    tx.oncomplete = res; tx.onerror = () => rej(tx.error);
+  });
+}
+async function getReceipt(id) {
+  const d = await db();
+  return new Promise((res, rej) => {
+    const rq = d.transaction("receipts").objectStore("receipts").get(id);
+    rq.onsuccess = () => res(rq.result || null); rq.onerror = () => rej(rq.error);
+  });
+}
+async function delReceipt(id) {
+  const d = await db();
+  return new Promise((res) => {
+    const tx = d.transaction("receipts", "readwrite");
+    tx.objectStore("receipts").delete(id);
+    tx.oncomplete = res; tx.onerror = res;
+  });
+}
+
+/* ================= Categories & auto-suggest ================= */
+
+const EXPENSE_CATS = [
+  "Advertising & Marketing", "Office Supplies", "Software & Subscriptions",
+  "Travel", "Meals & Entertainment", "Rent & Utilities", "Professional Services",
+  "Insurance", "Equipment", "Shipping & Postage", "Bank & Payment Fees",
+  "Inventory / Materials", "Education & Training", "Other Expense"
+];
+const INCOME_CATS = ["Product Sales", "Services / Consulting", "Refunds Received", "Interest", "Other Income"];
+
+const KEYWORDS = [
+  [/(facebook|meta ads|google ads|adwords|tiktok ads|linkedin ads|mailchimp|klaviyo|billboard|sponsor)/i, "Advertising & Marketing"],
+  [/(staples|office depot|officeworks|stationer|paper|ink|toner|printer supplies)/i, "Office Supplies"],
+  [/(adobe|figma|canva|notion|slack|zoom|dropbox|github|aws|google cloud|azure|openai|anthropic|saas|subscription|shopify|domain|hosting|godaddy|namecheap|wix|squarespace)/i, "Software & Subscriptions"],
+  [/(airline|airways|delta|united|qantas|flight|hotel|marriott|hilton|airbnb|uber|lyft|grab|taxi|train|rental car|hertz|avis|parking|toll)/i, "Travel"],
+  [/(restaurant|cafe|coffee|starbucks|lunch|dinner|catering|doordash|ubereats|grubhub)/i, "Meals & Entertainment"],
+  [/(rent|lease|electric|electricity|water bill|gas bill|internet|comcast|verizon|at&t|t-mobile|utility|utilities|wework|coworking)/i, "Rent & Utilities"],
+  [/(attorney|lawyer|legal|accountant|accounting|bookkeep|cpa|consultant|notary|agency fee)/i, "Professional Services"],
+  [/(insurance|geico|allstate|state farm|liability|premium)/i, "Insurance"],
+  [/(apple store|best buy|dell|lenovo|laptop|monitor|camera|equipment|machine|tool|hardware|b&h)/i, "Equipment"],
+  [/(usps|fedex|ups|dhl|shipping|postage|courier|freight)/i, "Shipping & Postage"],
+  [/(stripe fee|paypal fee|bank fee|wire fee|merchant fee|transaction fee|interest charge)/i, "Bank & Payment Fees"],
+  [/(wholesale|supplier|materials|inventory|manufacture|alibaba|packaging)/i, "Inventory / Materials"],
+  [/(course|udemy|coursera|conference|workshop|seminar|training|book)/i, "Education & Training"],
+  [/(invoice|client|retainer|consulting|project payment)/i, "Services / Consulting", "income"],
+  [/(sale|order|shopify payout|amazon payout|etsy|stripe payout|revenue)/i, "Product Sales", "income"],
+];
+
+function suggestCategory(text, type) {
+  for (const [re, cat, t] of KEYWORDS) {
+    if ((t || "expense") !== type) continue;
+    if (re.test(text)) return cat;
+  }
+  return null;
+}
+
+/* clean a filename into a vendor guess: "starbucks_receipt-03.jpg" -> "Starbucks Receipt" */
+function vendorFromFilename(name) {
+  let s = name.replace(/\.[a-z0-9]+$/i, "")
+    .replace(/[-_.]+/g, " ")
+    .replace(/\b(img|scan|receipt|invoice|photo|copy|final|\d{1,4})\b/gi, " ")
+    .replace(/\s+/g, " ").trim();
+  if (!s) return "";
+  return s.split(" ").slice(0, 4).map(w => w[0] ? w[0].toUpperCase() + w.slice(1) : w).join(" ");
+}
+
+/* ================= Formatting ================= */
+
+const fmtMoney = (n) => new Intl.NumberFormat(undefined, { style: "currency", currency, maximumFractionDigits: 2 }).format(n);
+const fmtMoneyShort = (n) => {
+  const a = Math.abs(n);
+  if (a >= 1e6) return sym() + (n / 1e6).toFixed(1).replace(/\.0$/, "") + "M";
+  if (a >= 1e3) return sym() + (n / 1e3).toFixed(1).replace(/\.0$/, "") + "k";
+  return sym() + Math.round(n);
+};
+function sym() {
+  return (0).toLocaleString(undefined, { style: "currency", currency, minimumFractionDigits: 0, maximumFractionDigits: 0 }).replace(/[\d\s.,]/g, "");
+}
+const fmtDate = (iso) => new Date(iso + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+/* ================= Filters / state ================= */
+
+let yearFilter = "all";
+let typeFilter = "all";
+let catFilter = "";
+let searchQ = "";
+
+function visibleTxns() {
+  return txns.filter(t => {
+    if (yearFilter !== "all" && t.date.slice(0, 4) !== yearFilter) return false;
+    if (typeFilter !== "all" && t.type !== typeFilter) return false;
+    if (catFilter && t.category !== catFilter) return false;
+    if (searchQ) {
+      const hay = (t.vendor + " " + (t.description || "") + " " + (t.notes || "") + " " + t.category).toLowerCase();
+      if (!hay.includes(searchQ)) return false;
+    }
+    return true;
+  }).sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt);
+}
+function scopedTxns() { /* year scope only — used by tiles & charts */
+  return txns.filter(t => yearFilter === "all" || t.date.slice(0, 4) === yearFilter);
+}
+
+/* ================= Rendering ================= */
+
+const $ = (s) => document.querySelector(s);
+
+function render() {
+  renderYearOptions();
+  renderTiles();
+  renderBarChart();
+  renderDonut();
+  renderCatFilter();
+  renderTable();
+}
+
+function renderYearOptions() {
+  const sel = $("#yearFilter");
+  const years = [...new Set(txns.map(t => t.date.slice(0, 4)))].sort().reverse();
+  const cur = String(new Date().getFullYear());
+  if (!years.includes(cur)) years.unshift(cur);
+  const val = yearFilter;
+  sel.innerHTML = `<option value="all">All time</option>` +
+    years.map(y => `<option value="${y}">Tax year ${y}</option>`).join("");
+  sel.value = [...sel.options].some(o => o.value === val) ? val : "all";
+  yearFilter = sel.value;
+}
+
+function renderTiles() {
+  const scope = scopedTxns();
+  const inc = scope.filter(t => t.type === "income").reduce((s, t) => s + t.amount, 0);
+  const exp = scope.filter(t => t.type === "expense").reduce((s, t) => s + t.amount, 0);
+  const net = inc - exp;
+  const receipts = scope.filter(t => t.hasReceipt).length;
+  const period = yearFilter === "all" ? "all time" : "tax year " + yearFilter;
+  $("#tiles").innerHTML = `
+    <div class="tile">
+      <div class="label"><span class="dot" style="background:var(--income)"></span>Total income</div>
+      <div class="value">${fmtMoney(inc)}</div>
+      <div class="hint">${period}</div>
+    </div>
+    <div class="tile">
+      <div class="label"><span class="dot" style="background:var(--expense)"></span>Total expenses</div>
+      <div class="value">${fmtMoney(exp)}</div>
+      <div class="hint">${period}</div>
+    </div>
+    <div class="tile">
+      <div class="label">Net profit</div>
+      <div class="value ${net > 0 ? "positive" : net < 0 ? "negative" : ""}">${fmtMoney(net)}</div>
+      <div class="hint">income − expenses</div>
+    </div>
+    <div class="tile">
+      <div class="label">Receipts on file</div>
+      <div class="value">${receipts}<span class="muted-s" style="font-size:15px;font-weight:500"> / ${scope.length}</span></div>
+      <div class="hint">transactions with attachments</div>
+    </div>`;
+}
+
+/* ---- grouped bar chart: income vs expenses per month ---- */
+function renderBarChart() {
+  const wrap = $("#barChart");
+  const scope = scopedTxns();
+  if (!scope.length) {
+    wrap.innerHTML = `<div class="empty-note">No data yet — add a transaction or drop in a receipt.</div>`;
+    $("#barSub").textContent = "";
+    return;
+  }
+
+  // build month buckets: last 12 months (all-time) or the 12 months of the chosen year
+  let buckets = [];
+  if (yearFilter === "all") {
+    const now = new Date();
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      buckets.push({ key: d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0"), label: MONTHS[d.getMonth()] + (d.getMonth() === 0 ? " '" + String(d.getFullYear()).slice(2) : "") });
+    }
+    $("#barSub").textContent = "Last 12 months";
+  } else {
+    for (let m = 0; m < 12; m++) buckets.push({ key: yearFilter + "-" + String(m + 1).padStart(2, "0"), label: MONTHS[m] });
+    $("#barSub").textContent = "Jan – Dec " + yearFilter;
+  }
+  buckets.forEach(b => { b.income = 0; b.expense = 0; });
+  const bykey = Object.fromEntries(buckets.map(b => [b.key, b]));
+  for (const t of scope) {
+    const b = bykey[t.date.slice(0, 7)];
+    if (b) b[t.type] += t.amount;
+  }
+
+  const W = 640, H = 240, padL = 46, padR = 8, padT = 12, padB = 26;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  const maxV = Math.max(1, ...buckets.map(b => Math.max(b.income, b.expense)));
+  // nice max
+  const pow = Math.pow(10, Math.floor(Math.log10(maxV)));
+  const niceMax = Math.ceil(maxV / pow) * pow;
+  const y = v => padT + plotH - (v / niceMax) * plotH;
+
+  const slot = plotW / buckets.length;
+  const barW = Math.min(14, (slot - 8) / 2 - 1);
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map(f => f * niceMax);
+
+  let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Monthly income and expenses bar chart">`;
+  for (const tv of ticks) {
+    svg += `<line x1="${padL}" x2="${W - padR}" y1="${y(tv)}" y2="${y(tv)}" stroke="var(--grid)" stroke-width="1"/>`;
+    svg += `<text x="${padL - 8}" y="${y(tv) + 3.5}" text-anchor="end" font-size="10" fill="var(--text-muted)">${fmtMoneyShort(tv)}</text>`;
+  }
+  buckets.forEach((b, i) => {
+    const cx = padL + slot * i + slot / 2;
+    const gap = 2;
+    const specs = [["income", cx - barW - gap / 2, "var(--income)"], ["expense", cx + gap / 2, "var(--expense)"]];
+    for (const [k, x, color] of specs) {
+      const v = b[k];
+      const h = Math.max(v > 0 ? 2 : 0, (v / niceMax) * plotH);
+      const ty = padT + plotH - h;
+      if (h > 0) {
+        const r = Math.min(4, h);
+        svg += `<path d="M${x},${ty + h} V${ty + r} Q${x},${ty} ${x + Math.min(4, barW)},${ty} H${x + barW - Math.min(4, barW)} Q${x + barW},${ty} ${x + barW},${ty + r} V${ty + h} Z" fill="${color}"/>`;
+      }
+    }
+    // hover hit area
+    svg += `<rect class="hit" data-i="${i}" x="${padL + slot * i}" y="${padT}" width="${slot}" height="${plotH}" fill="transparent"/>`;
+    const every = buckets.length > 8 ? 2 : 1;
+    if (i % every === 0) svg += `<text x="${cx}" y="${H - 8}" text-anchor="middle" font-size="10" fill="var(--text-muted)">${b.label}</text>`;
+  });
+  svg += `<line x1="${padL}" x2="${W - padR}" y1="${y(0)}" y2="${y(0)}" stroke="var(--baseline)" stroke-width="1"/>`;
+  svg += `</svg><div class="tooltip" id="barTip"></div>`;
+  wrap.innerHTML = svg;
+
+  const tip = $("#barTip");
+  wrap.querySelectorAll(".hit").forEach(r => {
+    r.addEventListener("mousemove", (e) => {
+      const b = buckets[+r.dataset.i];
+      tip.innerHTML = `<div class="tt-title">${b.label}${yearFilter !== "all" ? " " + yearFilter : ""}</div>
+        <div class="tt-row"><span><span class="sw" style="background:var(--income)"></span>Income</span><b>${fmtMoney(b.income)}</b></div>
+        <div class="tt-row"><span><span class="sw" style="background:var(--expense)"></span>Expenses</span><b>${fmtMoney(b.expense)}</b></div>
+        <div class="tt-row" style="margin-top:3px"><span>Net</span><b>${fmtMoney(b.income - b.expense)}</b></div>`;
+      const rect = wrap.getBoundingClientRect();
+      let tx = e.clientX - rect.left + 14, ty = e.clientY - rect.top - 10;
+      if (tx + 170 > rect.width) tx = e.clientX - rect.left - 180;
+      tip.style.left = tx + "px"; tip.style.top = ty + "px"; tip.style.opacity = 1;
+    });
+    r.addEventListener("mouseleave", () => tip.style.opacity = 0);
+  });
+}
+
+/* ---- donut: expenses by category ---- */
+function renderDonut() {
+  const area = $("#donutArea");
+  const scope = scopedTxns().filter(t => t.type === "expense");
+  $("#donutSub").textContent = yearFilter === "all" ? "All time" : "Tax year " + yearFilter;
+  if (!scope.length) {
+    area.innerHTML = `<div class="empty-note">No expenses recorded yet.</div>`;
+    return;
+  }
+  const byCat = {};
+  for (const t of scope) byCat[t.category] = (byCat[t.category] || 0) + t.amount;
+  let entries = Object.entries(byCat).sort((a, b) => b[1] - a[1]);
+  // fold beyond 7 into "Other" so we never exceed the 8 fixed slots
+  if (entries.length > 8) {
+    const head = entries.slice(0, 7);
+    const rest = entries.slice(7).reduce((s, e) => s + e[1], 0);
+    entries = [...head, ["Other", rest]];
+  }
+  const total = entries.reduce((s, e) => s + e[1], 0);
+  const COLORS = ["var(--s1)","var(--s2)","var(--s3)","var(--s4)","var(--s5)","var(--s6)","var(--s7)","var(--s8)"];
+
+  const R = 80, r0 = 52, C = 90;
+  let a0 = -Math.PI / 2;
+  let paths = "";
+  entries.forEach(([name, v], i) => {
+    const frac = v / total;
+    const a1 = a0 + frac * Math.PI * 2;
+    const large = frac > 0.5 ? 1 : 0;
+    const p = (a, rad) => [C + rad * Math.cos(a), C + rad * Math.sin(a)];
+    const [x0, y0] = p(a0, R), [x1, y1] = p(a1, R), [x2, y2] = p(a1, r0), [x3, y3] = p(a0, r0);
+    if (frac >= 0.999) {
+      paths += `<circle class="seg" data-i="${i}" cx="${C}" cy="${C}" r="${(R + r0) / 2}" fill="none" stroke="${COLORS[i]}" stroke-width="${R - r0}"/>`;
+    } else {
+      paths += `<path class="seg" data-i="${i}" d="M${x0},${y0} A${R},${R} 0 ${large} 1 ${x1},${y1} L${x2},${y2} A${r0},${r0} 0 ${large} 0 ${x3},${y3} Z" fill="${COLORS[i]}" stroke="var(--surface-1)" stroke-width="2"/>`;
+    }
+    a0 = a1;
+  });
+
+  area.innerHTML = `
+    <div class="donut-layout">
+      <div class="chart-wrap">
+        <svg viewBox="0 0 180 180" role="img" aria-label="Expenses by category donut chart">
+          ${paths}
+          <text x="${C}" y="${C - 6}" text-anchor="middle" class="donut-center-label">Total</text>
+          <text x="${C}" y="${C + 13}" text-anchor="middle" class="donut-center-value">${fmtMoneyShort(total)}</text>
+        </svg>
+        <div class="tooltip" id="donutTip"></div>
+      </div>
+      <div class="donut-legend">
+        ${entries.map(([name, v], i) => `
+          <div class="dl-row">
+            <span class="swatch" style="background:${COLORS[i]}"></span>
+            <span class="name" title="${esc(name)}">${esc(name)}</span>
+            <span class="amt">${fmtMoney(v)}</span>
+            <span class="pct">${Math.round(v / total * 100)}%</span>
+          </div>`).join("")}
+      </div>
+    </div>`;
+
+  const tip = $("#donutTip");
+  const cw = area.querySelector(".chart-wrap");
+  area.querySelectorAll(".seg").forEach(s => {
+    s.addEventListener("mousemove", (e) => {
+      const [name, v] = entries[+s.dataset.i];
+      tip.innerHTML = `<div class="tt-title">${esc(name)}</div>
+        <div class="tt-row"><span>Amount</span><b>${fmtMoney(v)}</b></div>
+        <div class="tt-row"><span>Share</span><b>${(v / total * 100).toFixed(1)}%</b></div>`;
+      const rect = cw.getBoundingClientRect();
+      tip.style.left = (e.clientX - rect.left + 12) + "px";
+      tip.style.top = (e.clientY - rect.top - 8) + "px";
+      tip.style.opacity = 1;
+    });
+    s.addEventListener("mouseleave", () => tip.style.opacity = 0);
+  });
+}
+
+function renderCatFilter() {
+  const sel = $("#catFilter");
+  const used = [...new Set(txns.map(t => t.category))].sort();
+  const val = catFilter;
+  sel.innerHTML = `<option value="">All categories</option>` + used.map(c => `<option>${esc(c)}</option>`).join("");
+  sel.value = used.includes(val) ? val : "";
+  catFilter = sel.value;
+}
+
+function renderTable() {
+  const wrap = $("#txTableWrap");
+  const list = visibleTxns();
+  const scope = scopedTxns();
+  $("#txCount").textContent = txns.length
+    ? `${list.length} of ${scope.length} transaction${scope.length === 1 ? "" : "s"} shown`
+    : "";
+
+  if (!txns.length) {
+    wrap.innerHTML = `
+      <div class="empty-state">
+        <div class="big">📒</div>
+        <h3>No transactions yet</h3>
+        <p>Drop a receipt above, click “Add transaction”, or explore with sample data.</p>
+        <button class="toolbar-btn" id="sampleBtn">Load sample data</button>
+      </div>`;
+    $("#sampleBtn").addEventListener("click", loadSample);
+    return;
+  }
+  if (!list.length) {
+    wrap.innerHTML = `<div class="empty-note">Nothing matches the current filters.</div>`;
+    return;
+  }
+
+  const CAT_COLOR = catColorMap();
+  wrap.innerHTML = `
+    <div style="overflow-x:auto">
+    <table class="tx">
+      <thead><tr>
+        <th>Date</th><th>Vendor / Payer</th><th>Category</th><th class="amt">Amount</th><th style="width:110px"></th>
+      </tr></thead>
+      <tbody>
+        ${list.map(t => `
+          <tr class="txr" data-id="${t.id}">
+            <td class="muted-s" style="white-space:nowrap">${fmtDate(t.date)}</td>
+            <td class="vendor-cell"><div class="v">${esc(t.vendor)}</div>${t.description ? `<div class="d">${esc(t.description)}</div>` : ""}</td>
+            <td><span class="chip"><span class="cdot" style="background:${CAT_COLOR[t.category] || "var(--baseline)"}"></span>${esc(t.category)}</span></td>
+            <td class="amt ${t.type === "income" ? "in" : "out"}">${t.type === "income" ? "+" : "−"}${fmtMoney(t.amount)}</td>
+            <td>
+              <div class="row-actions">
+                ${t.hasReceipt ? `<button class="rcpt-btn" data-act="view" title="View receipt">🧾</button>` : ""}
+                <button class="icon-btn" data-act="edit" title="Edit">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+                </button>
+              </div>
+            </td>
+          </tr>`).join("")}
+      </tbody>
+    </table>
+    </div>`;
+
+  wrap.querySelectorAll("tr.txr").forEach(row => {
+    row.querySelector('[data-act="edit"]').addEventListener("click", () => openEdit(row.dataset.id));
+    const vb = row.querySelector('[data-act="view"]');
+    if (vb) vb.addEventListener("click", () => viewReceipt(row.dataset.id));
+  });
+}
+
+function catColorMap() {
+  /* stable mapping: expense categories by overall spend rank take slots 1..8 */
+  const byCat = {};
+  for (const t of txns.filter(t => t.type === "expense")) byCat[t.category] = (byCat[t.category] || 0) + t.amount;
+  const COLORS = ["var(--s1)","var(--s2)","var(--s3)","var(--s4)","var(--s5)","var(--s6)","var(--s7)","var(--s8)"];
+  const map = {};
+  Object.entries(byCat).sort((a, b) => b[1] - a[1]).forEach(([c], i) => map[c] = COLORS[i % 8]);
+  for (const c of INCOME_CATS) map[c] = "var(--income)";
+  return map;
+}
+
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+/* ================= Modal (add / edit) ================= */
+
+let modal = { id: null, type: "expense", receipt: null, catTouched: false, scan: null, token: 0 };
+
+function fillCatOptions(type, keep) {
+  const cats = type === "income" ? INCOME_CATS : EXPENSE_CATS;
+  $("#fCat").innerHTML = cats.map(c => `<option>${esc(c)}</option>`).join("");
+  if (keep && cats.includes(keep)) $("#fCat").value = keep;
+}
+
+function setType(type) {
+  modal.type = type;
+  $("#typeExp").classList.toggle("active", type === "expense");
+  $("#typeInc").classList.toggle("active", type === "income");
+  $("#vendorLabel").textContent = type === "income" ? "Payer / client" : "Vendor";
+  fillCatOptions(type, $("#fCat").value);
+  runSuggest();
+}
+
+function runSuggest() {
+  if (modal.catTouched) return;
+  const text = $("#fVendor").value + " " + $("#fDesc").value + " " + (modal.receipt ? modal.receipt.name : "");
+  const sug = suggestCategory(text, modal.type);
+  if (sug) {
+    $("#fCat").value = sug;
+    $("#catHint").classList.add("show");
+  } else {
+    $("#catHint").classList.remove("show");
+  }
+}
+
+function openModal({ id = null, receipt = null, prefill = {}, scan = null } = {}) {
+  modal = { id, type: prefill.type || "expense", receipt, catTouched: false, scan, token: modal.token + 1 };
+  $("#modalTitle").textContent = id ? "Edit transaction" : "New transaction";
+  $("#deleteBtn").style.display = id ? "" : "none";
+  $("#fDate").value = prefill.date || new Date().toISOString().slice(0, 10);
+  $("#fAmount").value = prefill.amount ?? "";
+  $("#fVendor").value = prefill.vendor || "";
+  $("#fDesc").value = prefill.description || "";
+  $("#fMethod").value = prefill.method || "Card";
+  $("#fNotes").value = prefill.notes || "";
+  fillCatOptions(modal.type, prefill.category);
+  if (prefill.category) { modal.catTouched = true; $("#catHint").classList.remove("show"); }
+  setTypeButtons();
+  renderReceiptPane();
+  renderScanBanner();
+  renderItems();
+  if (!prefill.category) runSuggest();
+  $("#txOverlay").classList.add("open");
+  setTimeout(() => $("#fVendor").focus(), 60);
+}
+
+/* ---- AI scan status + line items ---- */
+
+function renderScanBanner() {
+  const el = $("#scanBanner");
+  const s = modal.scan;
+  if (!s) { el.innerHTML = ""; return; }
+  if (s.state === "scanning") {
+    el.innerHTML = `<div class="scan-banner scanning"><span class="spinner"></span>
+      <span>Reading the receipt with Claude — filling in the details…</span></div>`;
+  } else if (s.state === "done") {
+    const conf = s.data.confidence;
+    const cls = conf === "low" ? "low" : "";
+    const lead = conf === "low"
+      ? "<b>Please double-check these.</b> Some of the receipt was hard to read"
+      : "<b>Filled in from the receipt.</b> Review before saving";
+    const note = s.data.notes ? ` — ${esc(s.data.notes)}` : "";
+    el.innerHTML = `<div class="scan-banner ${cls}"><span class="icon">${conf === "low" ? "⚠️" : "✨"}</span>
+      <span>${lead}${note}</span></div>`;
+  } else if (s.state === "file") {
+    el.innerHTML = `<div class="scan-banner failed"><span class="icon">📂</span>
+      <span><b>Scanning needs the app opened through the server.</b> This page was opened directly from the file, so there's nothing to send the receipt to.
+      Open <b>http://localhost:4173</b> instead — your saved transactions live there too.</span></div>`;
+  } else if (s.state === "unreachable") {
+    el.innerHTML = `<div class="scan-banner failed"><span class="icon">🔌</span>
+      <span><b>Can't reach the scanning service.</b> The local server may have stopped —
+      run <b>node server.mjs</b> in the finance-dashboard folder, then try again. You can still fill this in by hand.</span></div>`;
+  } else if (s.state === "unavailable") {
+    el.innerHTML = `<div class="scan-banner"><span class="icon">✍️</span>
+      <span><b>Automatic scanning isn't set up on this server.</b> Add your ANTHROPIC_API_KEY and restart to enable it — for now, enter the details below. The category is still suggested from the vendor name.</span></div>`;
+  } else if (s.state === "failed") {
+    el.innerHTML = `<div class="scan-banner failed"><span class="icon">⚠️</span>
+      <span>${esc(s.message || "Couldn't read the receipt automatically.")} Please fill in the details below.</span></div>`;
+  }
+}
+
+function renderItems() {
+  const el = $("#itemsBox");
+  const items = modal.scan?.data?.items;
+  if (!items || !items.length) { el.innerHTML = ""; return; }
+  el.innerHTML = `<div class="items-box">
+    <div class="ib-head">Items on this receipt</div>
+    ${items.slice(0, 12).map(i => `<div class="ib-row"><span>${esc(i.name)}</span><span>${i.amount ? fmtMoney(i.amount) : ""}</span></div>`).join("")}
+  </div>`;
+}
+
+/* ---- call the server-side Claude vision endpoint ---- */
+
+async function scanReceipt(rec) {
+  // Opened by double-clicking the file — there is no server to talk to.
+  if (location.protocol === "file:") {
+    const e = new Error("file-protocol"); e.fileProtocol = true; throw e;
+  }
+
+  let res;
+  try {
+    res = await fetch("/api/scan-receipt", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ dataUrl: rec.dataUrl, mime: rec.mime, filename: rec.name }),
+    });
+  } catch {
+    // fetch only rejects on a network-level failure (server down, no connection)
+    const e = new Error("unreachable"); e.unreachable = true; throw e;
+  }
+
+  if (res.status === 404 || res.status === 405) {
+    const e = new Error("not-configured"); e.unavailable = true; throw e;
+  }
+  let payload = null;
+  try { payload = await res.json(); } catch { /* non-JSON body */ }
+  if (!res.ok) {
+    if (res.status === 503) { const e = new Error("not-configured"); e.unavailable = true; throw e; }
+    throw new Error(payload?.error || `Scan failed (${res.status})`);
+  }
+  return payload;
+}
+
+/* map the model's output onto the form, without clobbering what the user typed */
+function applyScan(data) {
+  if (data.type === "income" || data.type === "expense") setType(data.type);
+  if (data.currency && [...$("#currencySel").options].some(o => o.value === data.currency)) {
+    currency = data.currency;
+    $("#currencySel").value = currency;
+    localStorage.setItem(LS_CUR, currency);
+  }
+  if (data.merchant) $("#fVendor").value = data.merchant;
+  if (data.date && /^\d{4}-\d{2}-\d{2}$/.test(data.date)) $("#fDate").value = data.date;
+  if (data.total > 0) $("#fAmount").value = data.total.toFixed(2);
+  if (data.description) $("#fDesc").value = data.description;
+  if (data.payment_method) $("#fMethod").value = data.payment_method;
+  if (data.category) {
+    fillCatOptions(modal.type, data.category);
+    $("#fCat").value = data.category;
+    modal.catTouched = true;              // don't let the keyword guesser overwrite it
+    $("#catHint").classList.remove("show");
+  }
+  const noteBits = [];
+  if (data.tax_amount > 0) noteBits.push(`Tax ${fmtMoney(data.tax_amount)}`);
+  if (data.notes) noteBits.push(data.notes);
+  if (noteBits.length && !$("#fNotes").value) $("#fNotes").value = noteBits.join(" · ");
+}
+
+function setTypeButtons() {
+  $("#typeExp").classList.toggle("active", modal.type === "expense");
+  $("#typeInc").classList.toggle("active", modal.type === "income");
+  $("#vendorLabel").textContent = modal.type === "income" ? "Payer / client" : "Vendor";
+}
+
+function renderReceiptPane() {
+  const pane = $("#receiptPane");
+  const body = $("#modalBody");
+  if (!modal.receipt) { pane.innerHTML = ""; body.classList.add("no-receipt"); return; }
+  body.classList.remove("no-receipt");
+  const r = modal.receipt;
+  const scanning = modal.scan?.state === "scanning";
+  pane.innerHTML = `
+    <div class="frame">${r.mime === "application/pdf"
+      ? `<div class="pdf-badge"><div class="big">📄</div>PDF attached</div>`
+      : `<img src="${r.dataUrl}" alt="Receipt preview">`}
+      ${scanning ? `<div class="scan-overlay"><span class="spinner"></span>Reading receipt…</div>` : ""}
+    </div>
+    <div class="fname">${esc(r.name)}</div>`;
+}
+
+function closeModal() {
+  $("#txOverlay").classList.remove("open");
+  if (uploadQueue.length) {
+    const next = uploadQueue.shift();
+    setTimeout(() => openFromFile(next), 250);
+  }
+}
+
+async function saveModal() {
+  const form = $("#txForm");
+  if (!form.reportValidity()) return;
+  const amount = parseFloat($("#fAmount").value);
+  if (!(amount > 0)) { $("#fAmount").focus(); return; }
+  const data = {
+    type: modal.type,
+    date: $("#fDate").value,
+    vendor: $("#fVendor").value.trim(),
+    description: $("#fDesc").value.trim(),
+    category: $("#fCat").value,
+    amount: Math.round(amount * 100) / 100,
+    method: $("#fMethod").value,
+    notes: $("#fNotes").value.trim(),
+  };
+  if (modal.id) {
+    const t = txns.find(t => t.id === modal.id);
+    Object.assign(t, data);
+    if (modal.receipt && modal.receipt.fresh) {
+      await putReceipt(t.id, { dataUrl: modal.receipt.dataUrl, name: modal.receipt.name, mime: modal.receipt.mime });
+      t.hasReceipt = true; t.receiptName = modal.receipt.name;
+    }
+    toast("Transaction updated");
+  } else {
+    const t = { id: uid(), createdAt: Date.now(), hasReceipt: false, receiptName: "", ...data };
+    if (modal.receipt) {
+      await putReceipt(t.id, { dataUrl: modal.receipt.dataUrl, name: modal.receipt.name, mime: modal.receipt.mime });
+      t.hasReceipt = true; t.receiptName = modal.receipt.name;
+    }
+    txns.push(t);
+    toast(data.type === "income" ? "Income recorded" : "Expense recorded");
+  }
+  persist();
+  closeModal();
+  render();
+}
+
+function openEdit(id) {
+  const t = txns.find(t => t.id === id);
+  if (!t) return;
+  openModal({ id, prefill: t });
+  if (t.hasReceipt) {
+    getReceipt(id).then(r => {
+      if (r && modal.id === id) { modal.receipt = { ...r, fresh: false }; renderReceiptPane(); }
+    });
+  }
+}
+
+async function deleteCurrent() {
+  if (!modal.id) return;
+  if (!confirm("Delete this transaction? This can't be undone.")) return;
+  txns = txns.filter(t => t.id !== modal.id);
+  await delReceipt(modal.id);
+  persist(); closeModal(); render();
+  toast("Transaction deleted");
+}
+
+/* ================= Receipt viewer ================= */
+
+async function viewReceipt(id) {
+  const t = txns.find(t => t.id === id);
+  const r = await getReceipt(id);
+  if (!r) { toast("Receipt not found"); return; }
+  if (r.mime === "application/pdf") {
+    const win = window.open("", "_blank");
+    if (win) win.document.write(`<iframe src="${r.dataUrl}" style="position:fixed;inset:0;width:100%;height:100%;border:0"></iframe>`);
+    return;
+  }
+  $("#viewTitle").textContent = (t ? t.vendor + " — " : "") + r.name;
+  $("#viewBody").innerHTML = `<img src="${r.dataUrl}" alt="Receipt">`;
+  $("#viewOverlay").classList.add("open");
+}
+
+/* ================= File upload ================= */
+
+function readFileScaled(file) {
+  return new Promise((resolve, reject) => {
+    if (file.type === "application/pdf") {
+      const fr = new FileReader();
+      fr.onload = () => resolve({ dataUrl: fr.result, name: file.name, mime: file.type });
+      fr.onerror = reject;
+      fr.readAsDataURL(file);
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const MAX = 1400;
+      const scale = Math.min(1, MAX / Math.max(img.width, img.height));
+      const c = document.createElement("canvas");
+      c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url);
+      resolve({ dataUrl: c.toDataURL("image/jpeg", 0.85), name: file.name, mime: "image/jpeg" });
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Could not read image")); };
+    img.src = url;
+  });
+}
+
+let uploadQueue = [];
+async function handleFiles(files) {
+  const ok = [...files].filter(f => f.type.startsWith("image/") || f.type === "application/pdf");
+  if (!ok.length) { toast("Only images and PDFs are supported"); return; }
+  uploadQueue = ok.slice(1);
+  await openFromFile(ok[0]);
+}
+async function openFromFile(file) {
+  let rec;
+  try {
+    rec = await readFileScaled(file);
+    rec.fresh = true;
+  } catch {
+    toast("Couldn't read that file");
+    return;
+  }
+
+  // Open immediately so the receipt is visible while Claude reads it.
+  openModal({
+    receipt: rec,
+    prefill: { vendor: vendorFromFilename(file.name) },
+    scan: { state: "scanning" },
+  });
+  const token = modal.token;
+
+  try {
+    const data = await scanReceipt(rec);
+    if (modal.token !== token) return;          // user moved on to another receipt
+    if (data.is_receipt === false) {
+      modal.scan = { state: "failed", message: "This doesn't look like a receipt or invoice." };
+    } else {
+      applyScan(data);
+      modal.scan = { state: "done", data };
+    }
+  } catch (err) {
+    if (modal.token !== token) return;
+    modal.scan =
+      err.fileProtocol ? { state: "file" } :
+      err.unreachable  ? { state: "unreachable" } :
+      err.unavailable  ? { state: "unavailable" } :
+      { state: "failed", message: err.message };
+    runSuggest();                                // fall back to keyword categorisation
+  }
+  renderScanBanner();
+  renderItems();
+  renderReceiptPane();
+}
+
+/* ================= Export ================= */
+
+function exportCSV() {
+  const list = visibleTxns();
+  if (!list.length) { toast("Nothing to export"); return; }
+  const cols = ["Date", "Type", "Vendor/Payer", "Description", "Category", "Amount", "Currency", "Payment Method", "Notes", "Receipt Attached"];
+  const q = (v) => { v = String(v ?? ""); return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v; };
+  const rows = [...list].sort((a, b) => a.date.localeCompare(b.date)).map(t =>
+    [t.date, t.type, t.vendor, t.description, t.category, t.amount.toFixed(2), currency, t.method, t.notes, t.hasReceipt ? "yes" : "no"].map(q).join(","));
+
+  // summary by category appended below a blank line — accountants like both in one file
+  const sum = {};
+  for (const t of list) {
+    const k = t.type + "|" + t.category;
+    sum[k] = (sum[k] || 0) + t.amount;
+  }
+  const sumRows = Object.entries(sum).sort().map(([k, v]) => {
+    const [type, cat] = k.split("|");
+    return [type, cat, v.toFixed(2), currency].map(q).join(",");
+  });
+
+  const csv = cols.map(q).join(",") + "\n" + rows.join("\n") +
+    "\n\nSummary by Category\nType,Category,Total,Currency\n" + sumRows.join("\n") + "\n";
+
+  const label = yearFilter === "all" ? "all-time" : yearFilter;
+  const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `ledgerly-transactions-${label}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  toast(`Exported ${list.length} transactions`);
+}
+
+/* ================= Sample data ================= */
+
+function loadSample() {
+  const y = new Date().getFullYear();
+  const mk = (m, d, type, vendor, description, category, amount, method = "Card") =>
+    ({ id: uid(), createdAt: Date.now(), hasReceipt: false, receiptName: "", type, date: `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`, vendor, description, category, amount, method, notes: "" });
+  txns.push(
+    mk(1, 9,  "income",  "Shopify Payouts", "January store sales", "Product Sales", 8420.50, "Bank transfer"),
+    mk(1, 14, "expense", "Meta Ads", "Golf ball launch campaign", "Advertising & Marketing", 1240.00),
+    mk(1, 22, "expense", "Canva", "Pro subscription — annual", "Software & Subscriptions", 119.99),
+    mk(2, 6,  "income",  "Shopify Payouts", "February store sales", "Product Sales", 9105.75, "Bank transfer"),
+    mk(2, 11, "expense", "Uline", "Shipping boxes and mailers", "Shipping & Postage", 342.60),
+    mk(2, 19, "expense", "TaylorMade Supply Co", "Surlyn cover stock order", "Inventory / Materials", 2150.00, "Bank transfer"),
+    mk(3, 8,  "income",  "Shopify Payouts", "March store sales", "Product Sales", 11230.00, "Bank transfer"),
+    mk(3, 12, "expense", "Google Ads", "Search campaign", "Advertising & Marketing", 980.45),
+    mk(3, 25, "expense", "WeWork", "Q1 office membership", "Rent & Utilities", 750.00),
+    mk(4, 4,  "income",  "Pro Shop Direct", "Wholesale order #1042", "Product Sales", 4550.00, "Bank transfer"),
+    mk(4, 15, "expense", "Delta Air Lines", "PGA Show — flights", "Travel", 638.20),
+    mk(4, 16, "expense", "Marriott Orlando", "PGA Show — 3 nights", "Travel", 512.88),
+    mk(5, 9,  "income",  "Shopify Payouts", "May store sales", "Product Sales", 10480.25, "Bank transfer"),
+    mk(5, 20, "expense", "Freshbooks CPA Group", "Quarterly bookkeeping", "Professional Services", 400.00),
+    mk(6, 5,  "income",  "Shopify Payouts", "June store sales", "Product Sales", 12610.90, "Bank transfer"),
+    mk(6, 11, "expense", "Meta Ads", "Summer promo campaign", "Advertising & Marketing", 1560.00),
+    mk(6, 18, "expense", "Stripe", "Payment processing fees — H1", "Bank & Payment Fees", 486.34),
+    mk(7, 7,  "income",  "Shopify Payouts", "July store sales", "Product Sales", 13890.10, "Bank transfer"),
+    mk(7, 15, "expense", "Uline", "Packaging restock", "Shipping & Postage", 298.75),
+    mk(7, 23, "expense", "Adobe", "Creative Cloud — annual", "Software & Subscriptions", 659.88),
+  );
+  persist();
+  render();
+  toast("Sample data loaded — you can delete it anytime");
+}
+
+/* ================= Toast ================= */
+
+let toastTimer = null;
+function toast(msg) {
+  const el = $("#toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("show"), 2600);
+}
+
+/* ================= Wire up ================= */
+
+$("#yearFilter").addEventListener("change", (e) => { yearFilter = e.target.value; render(); });
+$("#currencySel").value = currency;
+$("#currencySel").addEventListener("change", (e) => { currency = e.target.value; localStorage.setItem(LS_CUR, currency); render(); });
+$("#exportBtn").addEventListener("click", exportCSV);
+$("#addBtn").addEventListener("click", () => openModal());
+
+$("#typeSeg").querySelectorAll("button").forEach(b => b.addEventListener("click", () => {
+  $("#typeSeg").querySelectorAll("button").forEach(x => x.classList.remove("active"));
+  b.classList.add("active");
+  typeFilter = b.dataset.t;
+  renderTable();
+}));
+$("#catFilter").addEventListener("change", (e) => { catFilter = e.target.value; renderTable(); });
+$("#searchBox").addEventListener("input", (e) => { searchQ = e.target.value.trim().toLowerCase(); renderTable(); });
+
+const dz = $("#dropzone");
+dz.addEventListener("click", () => $("#fileInput").click());
+dz.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); $("#fileInput").click(); } });
+$("#fileInput").addEventListener("change", (e) => { handleFiles(e.target.files); e.target.value = ""; });
+["dragenter", "dragover"].forEach(ev => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.add("dragover"); }));
+["dragleave", "drop"].forEach(ev => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.remove("dragover"); }));
+dz.addEventListener("drop", (e) => handleFiles(e.dataTransfer.files));
+
+$("#typeExp").addEventListener("click", () => setType("expense"));
+$("#typeInc").addEventListener("click", () => setType("income"));
+$("#fVendor").addEventListener("input", runSuggest);
+$("#fDesc").addEventListener("input", runSuggest);
+$("#fCat").addEventListener("change", () => { modal.catTouched = true; $("#catHint").classList.remove("show"); });
+
+$("#modalClose").addEventListener("click", closeModal);
+$("#cancelBtn").addEventListener("click", closeModal);
+$("#saveBtn").addEventListener("click", saveModal);
+$("#deleteBtn").addEventListener("click", deleteCurrent);
+$("#txOverlay").addEventListener("mousedown", (e) => { if (e.target === e.currentTarget) closeModal(); });
+$("#viewClose").addEventListener("click", () => $("#viewOverlay").classList.remove("open"));
+$("#viewOverlay").addEventListener("mousedown", (e) => { if (e.target === e.currentTarget) e.currentTarget.classList.remove("open"); });
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") { closeModal(); $("#viewOverlay").classList.remove("open"); }
+});
+
+/* Opened by double-clicking the file? Say so up front — scanning can't work here. */
+if (location.protocol === "file:") {
+  document.querySelector("#dropzone .dz-sub").innerHTML =
+    `<b>Receipt scanning is off in this window.</b> You opened the file directly, so there's no server to read receipts. ` +
+    `Open <b>http://localhost:4173</b> for scanning and your saved data — you can still add transactions by hand here.`;
+}
+
+render();
+</script>
+</body>
+</html>

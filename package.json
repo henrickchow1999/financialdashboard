@@ -1,0 +1,17 @@
+{
+  "name": "ledgerly",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Income & expense tracker with AI receipt scanning and accountant CSV export",
+  "scripts": {
+    "start": "node server.mjs",
+    "dev": "node server.mjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.70.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
