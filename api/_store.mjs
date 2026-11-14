@@ -109,6 +109,22 @@ export async function updateLedger(mutate, message = "Update ledger") {
   throw Object.assign(new Error("Too many simultaneous saves, please try again."), { statusCode: 503 });
 }
 
+/**
+ * Save a new file (e.g. a screenshot waiting to be processed) in the data repo.
+ * Returns false if a file already exists at that path (e.g. Telegram re-sent the same message).
+ */
+export async function putNewFile(path, buffer, message) {
+  const res = await gh(`/repos/${repo()}/contents/${path}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message, content: buffer.toString("base64") }),
+  });
+  if (res.ok) return true;
+  if (res.status === 422 || res.status === 409) return false; // already there
+  const detail = await res.text().catch(() => "");
+  throw Object.assign(new Error(`GitHub upload failed (${res.status}) ${detail.slice(0, 200)}`), { statusCode: 502 });
+}
+
 /* ---------------- transaction validation ---------------- */
 
 const TYPES = new Set(["income", "expense"]);

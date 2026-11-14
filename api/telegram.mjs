@@ -5,10 +5,13 @@
 //            /undo              remove what the last screenshot added
 //            /help
 //
-// Env: TELEGRAM_BOT_TOKEN, APP_PASSCODE, ANTHROPIC_API_KEY, GITHUB_TOKEN
+// Env: TELEGRAM_BOT_TOKEN, APP_PASSCODE, GITHUB_TOKEN
+//      ANTHROPIC_API_KEY (optional): if set, screenshots are read instantly here.
+//      If not set, they're saved to inbox/ in the data repo for the hourly
+//      Claude Code task to process.
 
 import { telegramSecretOk, passcodeOk } from "./_auth.mjs";
-import { readLedger, updateLedger, cleanTxn } from "./_store.mjs";
+import { readLedger, updateLedger, cleanTxn, putNewFile } from "./_store.mjs";
 import { extractStatement } from "./_statement.mjs";
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from "./_extract.mjs";
 
@@ -16,7 +19,8 @@ export const config = { maxDuration: 60 };
 
 const MAX_IMAGE_BYTES = 5_000_000;
 const HELP =
-  "Send me a screenshot of your card/bank transactions, or a photo of a receipt, and I'll add them to Ledgerly.\n\n" +
+  "Send me a screenshot of your card/bank transactions, or a photo of a receipt, and I'll add them to Ledgerly" +
+  (process.env.ANTHROPIC_API_KEY ? ".\n\n" : " (within the hour).\n\n") +
   "• Duplicates (e.g. overlapping screenshots) are skipped automatically.\n" +
   "• Card bill payments and transfers between your own accounts are not added.\n" +
   "• /undo removes whatever the last screenshot added.";
@@ -121,7 +125,20 @@ function dedupe(existing, incoming) {
   return { fresh, dupes };
 }
 
+/* Without an API key, screenshots wait in inbox/ of the data repo. A scheduled
+   Claude Code task (see PROCESS.md in the data repo) reads them, adds the
+   transactions with the same rules as below, and messages the owner. */
+async function queueImage({ msg, chatId, updateId, fileId }) {
+  const image = await downloadImage(fileId);
+  const ext = { "image/png": "png", "image/webp": "webp", "image/gif": "gif" }[image.mime] || "jpg";
+  const saved = await putNewFile(`inbox/${updateId}.${ext}`, Buffer.from(image.base64, "base64"), `Telegram: screenshot ${updateId} waiting`);
+  if (saved) {
+    await reply(chatId, "📥 Saved. I'll add these transactions within the hour and message you when it's done.", msg.message_id);
+  }
+}
+
 async function handleImage({ msg, chatId, updateId, fileId }) {
+  if (!process.env.ANTHROPIC_API_KEY) return queueImage({ msg, chatId, updateId, fileId });
   tg("sendChatAction", { chat_id: chatId, action: "typing" }).catch(() => {});
   const image = await downloadImage(fileId);
   const result = await extractStatement(image);
