@@ -1,29 +1,25 @@
-// Telegram bot webhook: send the bot a screenshot of your transactions (or a receipt)
-// and they're added to the ledger.
+// Telegram bot webhook. Screenshots of transactions (or receipt photos) are saved
+// to inbox/ in the private data repo; a scheduled Claude Code task (see
+// PROCESS.md in that repo) reads them, adds the transactions, and messages the
+// owner. This file never calls the Claude API.
 //
 // Commands:  /start <passcode>  connect this Telegram account (only that account is accepted after)
 //            /undo              remove what the last screenshot added
 //            /help
 //
 // Env: TELEGRAM_BOT_TOKEN, APP_PASSCODE, GITHUB_TOKEN
-//      ANTHROPIC_API_KEY (optional): if set, screenshots are read instantly here.
-//      If not set, they're saved to inbox/ in the data repo for the hourly
-//      Claude Code task to process.
 
 import { telegramSecretOk, passcodeOk } from "./_auth.mjs";
-import { readLedger, updateLedger, cleanTxn, putNewFile } from "./_store.mjs";
-import { extractStatement } from "./_statement.mjs";
-import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from "./_extract.mjs";
+import { readLedger, updateLedger, putNewFile } from "./_store.mjs";
 
 export const config = { maxDuration: 60 };
 
 const MAX_IMAGE_BYTES = 5_000_000;
 const HELP =
-  "Send me a screenshot of your card/bank transactions, or a photo of a receipt, and I'll add them to Ledgerly" +
-  (process.env.ANTHROPIC_API_KEY ? ".\n\n" : " (within the hour).\n\n") +
+  "Send me a screenshot of your card/bank transactions, or a photo of a receipt, and I'll add them to Ledgerly within the hour.\n\n" +
   "• Duplicates (e.g. overlapping screenshots) are skipped automatically.\n" +
   "• Card bill payments and transfers between your own accounts are not added.\n" +
-  "• /undo removes whatever the last screenshot added.";
+  "• /undo removes whatever the last screenshot added."
 
 async function tg(method, payload) {
   const res = await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/${method}`, {
@@ -56,78 +52,7 @@ async function downloadImage(fileId) {
   return { base64: buf.toString("base64"), mime };
 }
 
-const money = (n, cur = "MYR") => `${cur === "MYR" ? "RM" : cur + " "}${n.toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const rawKey = (s) => String(s || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8);
-const txnKey = (t) => `${t.date}|${t.type}|${Number(t.amount).toFixed(2)}`;
-
-/** Turn extracted rows into ledger transactions; split out rows we deliberately don't add. */
-function toTxns(rows, batch) {
-  const add = [];
-  const ignored = [];
-  const now = Date.now();
-  rows.forEach((r, i) => {
-    if (!(r.amount > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(r.date)) {
-      ignored.push({ r, why: "unreadable" });
-      return;
-    }
-    if (r.kind === "card_payment" || r.kind === "transfer") {
-      ignored.push({ r, why: r.kind === "card_payment" ? "card bill payment" : "transfer between your accounts" });
-      return;
-    }
-    const type = r.direction === "money_in" ? "income" : "expense";
-    let category = r.category;
-    if (type === "expense" && !EXPENSE_CATEGORIES.includes(category)) category = "Other Expense";
-    if (type === "income") {
-      if (r.kind === "refund") category = "Refunds Received";
-      else if (!INCOME_CATEGORIES.includes(category)) category = "Other Income";
-    }
-    const notes = [
-      r.foreign_amount ? `Charged as ${r.foreign_amount}` : "",
-      r.home_currency && r.home_currency !== "MYR" ? `Amount in ${r.home_currency}` : "",
-      "Added from Telegram",
-    ].filter(Boolean).join(" · ");
-    const t = cleanTxn({
-      id: `tg${batch.slice(2)}x${i}`,
-      createdAt: now + i,
-      hasReceipt: false,
-      receiptName: "",
-      type,
-      date: r.date,
-      vendor: r.merchant || r.raw_text,
-      description: r.description,
-      category,
-      amount: r.amount,
-      method: "Card",
-      notes,
-      source: { kind: "telegram", batch, raw: r.raw_text },
-    });
-    if (t) add.push(t); else ignored.push({ r, why: "unreadable" });
-  });
-  return { add, ignored };
-}
-
-/** Rows already in the ledger (same date, type and amount, and same statement text when known) are skipped. */
-function dedupe(existing, incoming) {
-  const pool = existing.map((t) => ({ key: txnKey(t), raw: t.source?.raw ? rawKey(t.source.raw) : null }));
-  const fresh = [];
-  const dupes = [];
-  for (const t of incoming) {
-    const k = txnKey(t);
-    const rk = rawKey(t.source?.raw);
-    const idx = pool.findIndex((p) => p.key === k && (p.raw === null || p.raw === rk));
-    if (idx >= 0) {
-      pool.splice(idx, 1); // each existing row can only cancel out one incoming row
-      dupes.push(t);
-    } else {
-      fresh.push(t);
-    }
-  }
-  return { fresh, dupes };
-}
-
-/* Without an API key, screenshots wait in inbox/ of the data repo. A scheduled
-   Claude Code task (see PROCESS.md in the data repo) reads them, adds the
-   transactions with the same rules as below, and messages the owner. */
+/* Save the screenshot for the hourly Claude Code task to read. */
 async function queueImage({ msg, chatId, updateId, fileId }) {
   const image = await downloadImage(fileId);
   const ext = { "image/png": "png", "image/webp": "webp", "image/gif": "gif" }[image.mime] || "jpg";
@@ -135,50 +60,6 @@ async function queueImage({ msg, chatId, updateId, fileId }) {
   if (saved) {
     await reply(chatId, "📥 Saved. I'll add these transactions within the hour and message you when it's done.", msg.message_id);
   }
-}
-
-async function handleImage({ msg, chatId, updateId, fileId }) {
-  if (!process.env.ANTHROPIC_API_KEY) return queueImage({ msg, chatId, updateId, fileId });
-  tg("sendChatAction", { chat_id: chatId, action: "typing" }).catch(() => {});
-  const image = await downloadImage(fileId);
-  const result = await extractStatement(image);
-
-  if (!result.is_financial || !result.transactions.length) {
-    await reply(chatId, "I couldn't find any transactions in that image." + (result.notes ? `\n\n${result.notes}` : ""), msg.message_id);
-    return;
-  }
-
-  const batch = `tg${updateId}`;
-  const { add, ignored } = toTxns(result.transactions, batch);
-
-  const { result: saved } = await updateLedger((d) => {
-    if (d.telegram.seenUpdates.includes(updateId)) return { skip: true, already: true };
-    const { fresh, dupes } = dedupe(d.txns, add);
-    d.txns.push(...fresh);
-    d.telegram.seenUpdates = [...d.telegram.seenUpdates, updateId].slice(-300);
-    if (fresh.length) d.telegram.batches = [...d.telegram.batches, batch].slice(-50);
-    return { fresh, dupes };
-  }, `Telegram: screenshot ${updateId}`);
-
-  if (saved.already) return;
-  const { fresh, dupes } = saved;
-  const lines = [];
-  if (fresh.length) {
-    const spent = fresh.filter((t) => t.type === "expense").reduce((s, t) => s + t.amount, 0);
-    const got = fresh.filter((t) => t.type === "income").reduce((s, t) => s + t.amount, 0);
-    lines.push(`✅ Added ${fresh.length} transaction${fresh.length === 1 ? "" : "s"}` +
-      (spent ? ` · spent ${money(spent)}` : "") + (got ? ` · received ${money(got)}` : ""));
-    for (const t of fresh) lines.push(`${t.type === "income" ? "+" : "−"}${money(t.amount)}  ${t.date.slice(5)}  ${t.vendor}`);
-  } else {
-    lines.push("Nothing new to add.");
-  }
-  if (dupes.length) lines.push("", `↩︎ Skipped ${dupes.length} already in your ledger.`);
-  for (const { r, why } of ignored) {
-    lines.push(`⏭ Not added (${why}): ${r.merchant || r.raw_text}${r.amount ? " " + money(r.amount) : ""}`);
-  }
-  if (result.notes) lines.push("", `Note: ${result.notes}`);
-  if (fresh.length) lines.push("", "Wrong? Send /undo to remove these.");
-  await reply(chatId, lines.join("\n"), msg.message_id);
 }
 
 async function handleUndo(chatId) {
@@ -235,9 +116,9 @@ export default async function handler(req, res) {
       await handleUndo(chatId);
     } else if (msg.photo?.length) {
       const best = msg.photo.reduce((a, b) => ((b.file_size || 0) > (a.file_size || 0) ? b : a));
-      await handleImage({ msg, chatId, updateId: update.update_id, fileId: best.file_id });
+      await queueImage({ msg, chatId, updateId: update.update_id, fileId: best.file_id });
     } else if (msg.document && /^image\//.test(msg.document.mime_type || "")) {
-      await handleImage({ msg, chatId, updateId: update.update_id, fileId: msg.document.file_id });
+      await queueImage({ msg, chatId, updateId: update.update_id, fileId: msg.document.file_id });
     } else {
       await reply(chatId, HELP);
     }
