@@ -4,9 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Ledgerly — Income & Expense Tracker</title>
-<meta name="description" content="A clean, private income and expense tracker for tax time. Upload receipts, auto-categorize, and export a CSV for your accountant. All data stays in your browser.">
+<meta name="description" content="A clean, private income and expense tracker for tax time. Upload receipts, auto-categorize, and export a CSV for your accountant.">
 <meta property="og:title" content="Ledgerly — Income & Expense Tracker">
-<meta property="og:description" content="Upload receipts, auto-categorize expenses, and export a CSV for your accountant. Everything stays private in your own browser.">
+<meta property="og:description" content="Upload receipts, auto-categorize expenses, and export a CSV for your accountant.">
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%232a78d6'/><text y='72' x='50' text-anchor='middle' font-size='62' font-family='system-ui,sans-serif' font-weight='700' fill='white'>L</text></svg>">
@@ -99,7 +99,8 @@
 
   /* ---------- Stat tiles ---------- */
   .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
-  @media (max-width: 860px) { .tiles { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 860px) { .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 520px) { .tiles { grid-template-columns: minmax(0, 1fr); } }
   .tile {
     background: var(--surface-1); border: 1px solid var(--border);
     border-radius: 12px; padding: 16px 18px; box-shadow: var(--shadow);
@@ -315,6 +316,25 @@
   }
   .receipt-pane .frame { position: relative; }
 
+  /* ---------- Cloud sync ---------- */
+  .sync-chip { cursor: pointer; }
+  .sync-chip .cdot { background: var(--text-muted); }
+  .sync-chip.ok .cdot { background: var(--good-text); }
+  .sync-chip.saving .cdot, .sync-chip.loading .cdot { background: var(--accent); }
+  .sync-chip.error .cdot { background: var(--critical); }
+  .cloud-banner {
+    display: none; align-items: center; gap: 12px; flex-wrap: wrap;
+    border-radius: 10px; padding: 12px 14px; margin-bottom: 16px; font-size: 13px;
+    background: rgba(42,120,214,.10); color: var(--text-primary);
+  }
+  .cloud-banner.show { display: flex; }
+  .cloud-banner .msg { flex: 1 1 260px; }
+  .cloud-banner .acts { display: flex; gap: 8px; }
+  .lock-card { max-width: 380px; }
+  .lock-card .modal-body { display: flex; flex-direction: column; gap: 12px; }
+  .lock-card p { font-size: 13px; color: var(--text-secondary); }
+  .lock-err { color: var(--critical); font-size: 12.5px; min-height: 1em; }
+
   .privacy-note {
     margin-top: 18px; text-align: center;
     font-size: 12.5px; color: var(--text-muted);
@@ -348,7 +368,17 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
       Add transaction
     </button>
+    <span class="chip sync-chip" id="syncChip" title="Click to refresh" hidden><span class="cdot"></span><span id="syncText"></span></span>
+    <button class="toolbar-btn" id="lockBtn" title="Forget the passcode on this device" hidden>Lock</button>
   </header>
+
+  <div class="cloud-banner" id="cloudBanner">
+    <span class="msg" id="cloudBannerMsg"></span>
+    <span class="acts">
+      <button class="toolbar-btn primary" id="importBtn">Import them</button>
+      <button class="toolbar-btn" id="importLaterBtn">Not now</button>
+    </span>
+  </div>
 
   <section class="tiles" id="tiles"></section>
 
@@ -405,9 +435,9 @@
     </div>
   </section>
 
-  <footer class="privacy-note">
-    🔒 Your transactions and receipts are stored only in this browser on this device — nothing is uploaded to any server.
-    Clearing your browser data will erase them, so export a CSV to keep a backup.
+  <footer class="privacy-note" id="privacyNote">
+    🔒 Your transactions are saved to your private GitHub repo and protected by your passcode, so every device sees the same data.
+    Receipt images stay in the browser where you added them. Send screenshots to your Telegram bot to add transactions automatically.
   </footer>
 
 </div>
@@ -486,6 +516,22 @@
   </div>
 </div>
 
+<!-- Passcode -->
+<div class="overlay" id="lockOverlay">
+  <div class="modal lock-card">
+    <div class="modal-head"><h3>Unlock Ledgerly</h3></div>
+    <form class="modal-body" id="lockForm" autocomplete="off">
+      <p>Enter your passcode (the <b>APP_PASSCODE</b> you set in Vercel). It's remembered on this device until you click Lock.</p>
+      <div class="field">
+        <label for="lockInput">Passcode</label>
+        <input type="password" id="lockInput" required autocomplete="current-password">
+      </div>
+      <div class="lock-err" id="lockErr"></div>
+      <button class="toolbar-btn primary" type="submit" style="justify-content:center">Unlock</button>
+    </form>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -493,14 +539,186 @@
 
 /* ================= Data layer ================= */
 
+/* Transactions live in a private GitHub repo, reached through /api/transactions.
+   The original browser-only copy (LS_KEY) is never overwritten in cloud mode:
+   it stays as a backup and is offered for import once. */
 const LS_KEY = "ledgerly.txns.v1";
 const LS_CUR = "ledgerly.currency";
+const LS_PASS = "ledgerly.passcode";
+const LS_CACHE = "ledgerly.txns.cloudcache";
+const LS_IMPORTED = "ledgerly.imported";
+
+const lsGet = (k, fallback = null) => { try { const v = localStorage.getItem(k); return v === null ? fallback : v; } catch { return fallback; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
+const lsDel = (k) => { try { localStorage.removeItem(k); } catch {} };
+const lsList = (k) => { try { const v = JSON.parse(localStorage.getItem(k) || "[]"); return Array.isArray(v) ? v : []; } catch { return []; } };
+
 let txns = [];
-try { txns = JSON.parse(localStorage.getItem(LS_KEY) || "[]"); } catch { txns = []; }
+let currency = lsGet(LS_CUR, "MYR");
 
-let currency = localStorage.getItem(LS_CUR) || "MYR";
+let cloud = false;          // true once the server answered with our data
+let synced = new Map();     // id -> signature of the server's copy
+let dirty = false;          // local changes waiting to be saved
+let saving = null;          // in-flight save
+let retryTimer = null;
 
-function persist() { localStorage.setItem(LS_KEY, JSON.stringify(txns)); }
+/* Stable signature so key order never matters when comparing copies. */
+const sig = (t) => JSON.stringify(Object.keys(t).sort().map(k => [k, t[k]]));
+
+function persist() {
+  if (!cloud) { lsSet(LS_KEY, JSON.stringify(txns)); return; }
+  lsSet(LS_CACHE, JSON.stringify(txns));
+  dirty = true;
+  syncNow();
+}
+
+async function api(method, body) {
+  const res = await fetch("/api/transactions", {
+    method,
+    headers: { "Content-Type": "application/json", "x-ledgerly-passcode": lsGet(LS_PASS, "") },
+    body: body ? JSON.stringify(body) : undefined,
+    cache: "no-store",
+  });
+  let json = {};
+  try { json = await res.json(); } catch {}
+  if (!res.ok) throw Object.assign(new Error(json.error || `Server error ${res.status}`), { status: res.status });
+  return json;
+}
+
+/* Bring in the server's list without losing local changes that aren't saved yet.
+   sentSigs: what we just sent — if the local copy still matches, the server's version wins. */
+function mergeServer(list, sentSigs = new Map()) {
+  const local = new Map(txns.map(t => [t.id, t]));
+  const changedLocally = (t) => sentSigs.has(t.id) ? sig(t) !== sentSigs.get(t.id) : sig(t) !== synced.get(t.id);
+  const next = [];
+  const onServer = new Set();
+  for (const s of list) {
+    onServer.add(s.id);
+    const l = local.get(s.id);
+    if (l) next.push(changedLocally(l) ? l : s);
+    else if (!synced.has(s.id) || sentSigs.has(s.id)) next.push(s);   // new from the bot / another device
+    // else: deleted here, not saved yet — leave it out
+  }
+  for (const l of txns) if (!onServer.has(l.id) && !synced.has(l.id)) next.push(l); // created here, not saved yet
+  txns = next;
+  synced = new Map(list.map(t => [t.id, sig(t)]));
+  lsSet(LS_CACHE, JSON.stringify(txns));
+}
+
+function syncNow() {
+  if (saving) return saving;
+  saving = (async () => {
+    while (dirty) {
+      dirty = false;
+      const upsert = txns.filter(t => synced.get(t.id) !== sig(t));
+      const ids = new Set(txns.map(t => t.id));
+      const del = [...synced.keys()].filter(id => !ids.has(id));
+      if (!upsert.length && !del.length) continue;
+      setSync("saving");
+      const sentSigs = new Map(upsert.map(t => [t.id, sig(t)]));
+      try {
+        const r = await api("POST", { upsert, delete: del });
+        mergeServer(r.txns, sentSigs);
+        render();
+      } catch (e) {
+        dirty = true;
+        if (e.status === 401) { setSync("error", "Passcode changed"); showLock("Your passcode was changed. Enter the new one."); break; }
+        setSync("error", "Not saved, retrying…");
+        clearTimeout(retryTimer);
+        retryTimer = setTimeout(syncNow, 15000);
+        break;
+      }
+    }
+    if (!dirty) setSync("ok");
+  })().finally(() => { saving = null; });
+  return saving;
+}
+
+async function refreshFromServer() {
+  if (!cloud || saving || dirty || document.hidden) return;
+  try {
+    const r = await api("GET");
+    if (saving || dirty) return;
+    const before = sig({ l: txns.map(sig) });
+    mergeServer(r.txns);
+    if (sig({ l: txns.map(sig) }) !== before) render();
+    setSync("ok");
+  } catch (e) {
+    if (e.status === 401) showLock("Your passcode was changed. Enter the new one.");
+    else setSync("error", "Offline, showing last copy");
+  }
+}
+
+function setSync(state, text) {
+  const chip = $("#syncChip");
+  chip.hidden = false;
+  chip.className = "chip sync-chip " + state;
+  $("#syncText").textContent = text || ({ ok: "Synced", saving: "Saving…", loading: "Connecting…", error: "Not synced", local: "This browser only" })[state] || "";
+}
+
+function showLock(msg = "") {
+  $("#lockErr").textContent = msg;
+  $("#lockOverlay").classList.add("open");
+  setTimeout(() => $("#lockInput").focus(), 50);
+}
+
+function checkImport() {
+  if (lsGet(LS_IMPORTED)) return;
+  const have = new Set(txns.map(t => t.id));
+  const missing = lsList(LS_KEY).filter(t => t && t.id && !have.has(t.id));
+  if (!missing.length) { if (lsList(LS_KEY).length) lsSet(LS_IMPORTED, "1"); return; }
+  $("#cloudBannerMsg").innerHTML =
+    `<b>${missing.length} transaction${missing.length === 1 ? " is" : "s are"} saved only in this browser.</b> ` +
+    `Import ${missing.length === 1 ? "it" : "them"} so ${missing.length === 1 ? "it shows" : "they show"} on every device. Your browser copy is kept as a backup.`;
+  $("#cloudBanner").classList.add("show");
+  $("#importBtn").onclick = async () => {
+    $("#importBtn").disabled = true;
+    txns.push(...missing);
+    persist();
+    await saving;
+    $("#importBtn").disabled = false;
+    if (!dirty) {
+      lsSet(LS_IMPORTED, "1");
+      $("#cloudBanner").classList.remove("show");
+      render();
+      toast(`Imported ${missing.length} transaction${missing.length === 1 ? "" : "s"}`);
+    } else {
+      toast("Import didn't finish, it will keep retrying");
+    }
+  };
+  $("#importLaterBtn").onclick = () => $("#cloudBanner").classList.remove("show");
+}
+
+async function boot() {
+  if (location.protocol === "file:") {          // opened as a file: no server, browser-only
+    txns = lsList(LS_KEY); render(); return;
+  }
+  if (!lsGet(LS_PASS)) { render(); showLock(); return; }
+  setSync("loading");
+  try {
+    const r = await api("GET");
+    cloud = true;
+    txns = r.txns;
+    synced = new Map(txns.map(t => [t.id, sig(t)]));
+    lsSet(LS_CACHE, JSON.stringify(txns));
+    setSync("ok");
+    $("#lockBtn").hidden = false;
+    render();
+    checkImport();
+  } catch (e) {
+    if (e.status === 401) { lsDel(LS_PASS); render(); showLock("Wrong passcode. Try again."); return; }
+    if (e.status === 404) {                      // server without cloud storage (e.g. old local dev server)
+      txns = lsList(LS_KEY); setSync("local"); render(); return;
+    }
+    // Server unreachable or misconfigured: show the last copy and keep trying.
+    cloud = true;
+    txns = lsList(LS_CACHE);
+    synced = new Map(txns.map(t => [t.id, sig(t)]));
+    $("#lockBtn").hidden = false;
+    setSync("error", e.status === 503 ? "Server not set up: " + e.message : "Offline, showing last copy");
+    render();
+  }
+}
 const uid = () => "t" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 
 /* Receipts live in IndexedDB so images don't blow the localStorage quota */
@@ -1166,7 +1384,7 @@ async function deleteCurrent() {
 async function viewReceipt(id) {
   const t = txns.find(t => t.id === id);
   const r = await getReceipt(id);
-  if (!r) { toast("Receipt not found"); return; }
+  if (!r) { toast("The receipt image is saved only on the device where it was added"); return; }
   if (r.mime === "application/pdf") {
     const win = window.open("", "_blank");
     if (win) win.document.write(`<iframe src="${r.dataUrl}" style="position:fixed;inset:0;width:100%;height:100%;border:0"></iframe>`);
@@ -1379,7 +1597,29 @@ if (location.protocol === "file:") {
     `Open <b>http://localhost:4173</b> for scanning and your saved data — you can still add transactions by hand here.`;
 }
 
-render();
+/* Cloud sync wiring */
+$("#lockForm").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const v = $("#lockInput").value.trim();
+  if (!v) return;
+  lsSet(LS_PASS, v);
+  $("#lockInput").value = "";
+  $("#lockOverlay").classList.remove("open");
+  if (cloud) { syncNow(); refreshFromServer(); } else boot();
+});
+$("#lockBtn").addEventListener("click", () => {
+  if (dirty || saving) { toast("Still saving, try again in a moment"); return; }
+  if (!confirm("Lock Ledgerly on this device? You'll need the passcode to open it again.")) return;
+  lsDel(LS_PASS); lsDel(LS_CACHE);
+  location.reload();
+});
+$("#syncChip").addEventListener("click", () => { if (dirty) syncNow(); else refreshFromServer(); });
+document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshFromServer(); });
+window.addEventListener("focus", refreshFromServer);
+setInterval(refreshFromServer, 45000);
+window.addEventListener("beforeunload", (e) => { if (dirty || saving) { e.preventDefault(); e.returnValue = ""; } });
+
+boot();
 </script>
 </body>
 </html>

@@ -56,8 +56,45 @@ function readBody(req, limitBytes = 12_000_000) {
   });
 }
 
+// Vercel-style handlers (req.body, res.status().json()) for the other API routes.
+const VERCEL_ROUTES = {
+  "/api/transactions": "./api/transactions.mjs",
+  "/api/telegram": "./api/telegram.mjs",
+};
+
+async function runVercelHandler(modulePath, req, res) {
+  const { default: handler } = await import(modulePath);
+  const raw = req.method === "GET" || req.method === "HEAD" ? "" : await readBody(req);
+  let body = raw;
+  if ((req.headers["content-type"] || "").includes("application/json") && raw) {
+    try { body = JSON.parse(raw); } catch { body = raw; }
+  }
+  const shim = Object.assign(req, { body });
+  let statusCode = 200;
+  const out = {
+    setHeader: (k, v) => res.setHeader(k, v),
+    status(code) { statusCode = code; return out; },
+    json(obj) {
+      res.writeHead(statusCode, { "content-type": "application/json" });
+      res.end(JSON.stringify(obj));
+      return out;
+    },
+  };
+  await handler(shim, out);
+}
+
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
+
+  if (VERCEL_ROUTES[url.pathname]) {
+    try {
+      return await runVercelHandler(VERCEL_ROUTES[url.pathname], req, res);
+    } catch (err) {
+      console.error(`${url.pathname} failed:`, err);
+      res.writeHead(500, { "content-type": "application/json" });
+      return res.end(JSON.stringify({ error: "Server error" }));
+    }
+  }
 
   if (url.pathname === "/api/scan-receipt") {
     if (req.method !== "POST") {
