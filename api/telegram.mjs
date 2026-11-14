@@ -8,9 +8,12 @@
 //            /help
 //
 // Env: TELEGRAM_BOT_TOKEN, APP_PASSCODE, GITHUB_TOKEN
+//      LEDGERLY_FIRE_URL, LEDGERLY_FIRE_TOKEN: the Claude Code scheduled task's API
+//      trigger (claude.ai/code/routines). When set, the bot starts the task as soon
+//      as screenshots arrive. It runs on the owner's Claude subscription.
 
 import { telegramSecretOk, passcodeOk } from "./_auth.mjs";
-import { readLedger, updateLedger, putNewFile } from "./_store.mjs";
+import { readLedger, updateLedger, putNewFile, listDir } from "./_store.mjs";
 
 export const config = { maxDuration: 60 };
 
@@ -19,7 +22,8 @@ const HELP =
   "Send me a screenshot of your card/bank transactions, or a photo of a receipt, and I'll add them to Ledgerly within the hour.\n\n" +
   "• Duplicates (e.g. overlapping screenshots) are skipped automatically.\n" +
   "• Card bill payments and transfers between your own accounts are not added.\n" +
-  "• /undo removes whatever the last screenshot added."
+  "• /undo removes whatever the last screenshot added.\n" +
+  "• /process starts processing now if something is still waiting."
 
 async function tg(method, payload) {
   const res = await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/${method}`, {
@@ -52,14 +56,66 @@ async function downloadImage(fileId) {
   return { base64: buf.toString("base64"), mime };
 }
 
-/* Save the screenshot for the hourly Claude Code task to read. */
+const FIRE_DELAY_MS = 12_000; // photos sent together arrive within a few seconds
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const fireConfigured = () =>
+  /^https:\/\/api\.anthropic\.com\/v1\/claude_code\/routines\/trig_[A-Za-z0-9]+\/fire$/.test(process.env.LEDGERLY_FIRE_URL || "") &&
+  !!process.env.LEDGERLY_FIRE_TOKEN;
+
+/** Start the Claude Code task that processes the inbox (runs on the owner's subscription). */
+async function fireProcessing() {
+  const res = await fetch(process.env.LEDGERLY_FIRE_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.LEDGERLY_FIRE_TOKEN}`,
+      "anthropic-beta": "experimental-cc-routine-2026-04-01",
+      "anthropic-version": "2023-06-01",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({}),
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(`Starting the processing task failed (${res.status}) ${detail.slice(0, 200)}`);
+  }
+}
+
+const inboxIds = async () =>
+  (await listDir("inbox")).filter((n) => /\.(jpe?g|png|webp|gif)$/i.test(n)).map((n) => Number(n.split(".")[0])).filter(Number.isFinite);
+
+/* Save the screenshot to the inbox, then (after a short wait, so photos sent
+   together are all saved) start the processing task once. */
 async function queueImage({ msg, chatId, updateId, fileId }) {
   const image = await downloadImage(fileId);
   const ext = { "image/png": "png", "image/webp": "webp", "image/gif": "gif" }[image.mime] || "jpg";
   const saved = await putNewFile(`inbox/${updateId}.${ext}`, Buffer.from(image.base64, "base64"), `Telegram: screenshot ${updateId} waiting`);
-  if (saved) {
-    await reply(chatId, "📥 Saved. I'll add these transactions within the hour and message you when it's done.", msg.message_id);
+  if (!saved) return; // Telegram re-sent a message we already have
+
+  if (!fireConfigured()) {
+    await reply(chatId, "📥 Saved. It'll be added the next time the inbox is processed.", msg.message_id);
+    return;
   }
+  await reply(chatId, "📥 Saved. I'll add it in a few minutes and message you when it's done.", msg.message_id);
+  await sleep(FIRE_DELAY_MS);
+  const ids = await inboxIds();
+  if (ids.length && Math.max(...ids) !== updateId) return; // a later photo will start the task
+  try {
+    await fireProcessing();
+  } catch (err) {
+    console.error(err);
+    await reply(chatId, "⚠️ Saved, but I couldn't start processing. Send /process to try again.");
+  }
+}
+
+async function handleProcess(chatId) {
+  if (!fireConfigured()) {
+    await reply(chatId, "Automatic processing isn't set up yet (LEDGERLY_FIRE_URL / LEDGERLY_FIRE_TOKEN in Vercel).");
+    return;
+  }
+  const waiting = (await inboxIds()).length;
+  if (!waiting) { await reply(chatId, "Nothing is waiting. Everything you sent has been added."); return; }
+  await fireProcessing();
+  await reply(chatId, `⏳ Processing ${waiting} screenshot${waiting === 1 ? "" : "s"} now. I'll message you when it's done.`);
 }
 
 async function handleUndo(chatId) {
@@ -114,6 +170,8 @@ export default async function handler(req, res) {
 
     if (text === "/undo") {
       await handleUndo(chatId);
+    } else if (text === "/process") {
+      await handleProcess(chatId);
     } else if (msg.photo?.length) {
       const best = msg.photo.reduce((a, b) => ((b.file_size || 0) > (a.file_size || 0) ? b : a));
       await queueImage({ msg, chatId, updateId: update.update_id, fileId: best.file_id });

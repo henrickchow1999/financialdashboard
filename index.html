@@ -760,6 +760,10 @@ async function delReceipt(id) {
 /* ================= Categories & auto-suggest ================= */
 
 const EXPENSE_CATS = [
+  /* personal */
+  "Food & Drinks", "Groceries", "Shopping & Fashion", "Transport & Fuel",
+  "Health & Beauty", "Sports & Recreation", "Entertainment",
+  /* business */
   "Advertising & Marketing", "Office Supplies", "Software & Subscriptions",
   "Travel", "Meals & Entertainment", "Rent & Utilities", "Professional Services",
   "Insurance", "Equipment", "Shipping & Postage", "Bank & Payment Fees",
@@ -768,10 +772,19 @@ const EXPENSE_CATS = [
 const INCOME_CATS = ["Product Sales", "Services / Consulting", "Refunds Received", "Interest", "Other Income"];
 
 const KEYWORDS = [
+  /* personal (checked first) */
+  [/(kfc|mcdonald|burger king|pizza|subway|starbucks|tealive|zus coffee|chagee|mixue|domino|marrybrown|nando|sushi|mamak|nasi|kopitiam|dessert|bakery|boba|bubble tea|restaurant|cafe|coffee|grabfood|foodpanda|shopeefood)/i, "Food & Drinks"],
+  [/(aeon|lotus|jaya grocer|village grocer|99 speedmart|mydin|giant|econsave|nsk|tf value|hero market|grocer|supermarket|mart)/i, "Groceries"],
+  [/(zara|uniqlo|h&m|cotton on|padini|mango|pull&bear|bershka|nike|adidas|shopee|lazada|zalora|fashion|boutique)/i, "Shopping & Fashion"],
+  [/(petron|petronas|shell|caltex|bhp|fuel|parking|toll|touch ?n ?go|tng|grab(?!food|pay)|e-hailing|lrt|mrt|rapidkl|ktm)/i, "Transport & Fuel"],
+  [/(watsons|guardian|pharmacy|clinic|hospital|dental|salon|spa|facial|beauty|skincare)/i, "Health & Beauty"],
+  [/(golf|gym|fitness|badminton|futsal|sport|yoga|pilates|swim)/i, "Sports & Recreation"],
+  [/(gsc|tgv|cinema|netflix|spotify|disney|youtube premium|karaoke|concert|ticket)/i, "Entertainment"],
+  /* business */
   [/(facebook|meta ads|google ads|adwords|tiktok ads|linkedin ads|mailchimp|klaviyo|billboard|sponsor)/i, "Advertising & Marketing"],
   [/(staples|office depot|officeworks|stationer|paper|ink|toner|printer supplies)/i, "Office Supplies"],
   [/(adobe|figma|canva|notion|slack|zoom|dropbox|github|aws|google cloud|azure|openai|anthropic|saas|subscription|shopify|domain|hosting|godaddy|namecheap|wix|squarespace)/i, "Software & Subscriptions"],
-  [/(airline|airways|delta|united|qantas|flight|hotel|marriott|hilton|airbnb|uber|lyft|grab|taxi|train|rental car|hertz|avis|parking|toll)/i, "Travel"],
+  [/(airline|airways|delta|united|qantas|flight|hotel|marriott|hilton|airbnb|uber|lyft|grab(?!pay|food)|taxi|train|rental car|hertz|avis|parking|toll)/i, "Travel"],
   [/(restaurant|cafe|coffee|starbucks|lunch|dinner|catering|doordash|ubereats|grubhub)/i, "Meals & Entertainment"],
   [/(rent|lease|electric|electricity|water bill|gas bill|internet|comcast|verizon|at&t|t-mobile|utility|utilities|wework|coworking)/i, "Rent & Utilities"],
   [/(attorney|lawyer|legal|accountant|accounting|bookkeep|cpa|consultant|notary|agency fee)/i, "Professional Services"],

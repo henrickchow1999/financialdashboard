@@ -125,6 +125,15 @@ export async function putNewFile(path, buffer, message) {
   throw Object.assign(new Error(`GitHub upload failed (${res.status}) ${detail.slice(0, 200)}`), { statusCode: 502 });
 }
 
+/** Names of the files in a folder of the data repo ([] if the folder doesn't exist). */
+export async function listDir(path) {
+  const res = await gh(`/repos/${repo()}/contents/${path}`);
+  if (res.status === 404) return [];
+  if (!res.ok) throw Object.assign(new Error(`GitHub list failed (${res.status})`), { statusCode: 502 });
+  const items = await res.json();
+  return Array.isArray(items) ? items.map((i) => i.name) : [];
+}
+
 /* ---------------- transaction validation ---------------- */
 
 const TYPES = new Set(["income", "expense"]);
